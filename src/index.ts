@@ -95,9 +95,10 @@ async function startBot(): Promise<void> {
   // 6. Запуск Telegram Polling
   try {
     console.log('📡 [MeteoBot] Подключение к Telegram Bot API...');
-    await bot.startPolling();
     const me = await bot.getMe();
-    console.log(`✅ [MeteoBot] Бот @${me.username} успешно запущен и слушает сообщения!`);
+    console.log(`✅ [MeteoBot] Бот @${me.username} успешно авторизован!`);
+    await bot.startPolling();
+    console.log(`🚀 [MeteoBot] Polling запущен, бот слушает сообщения.`);
   } catch (err: any) {
     const details = extractErrorDetails(err);
     console.error('❌ [MeteoBot] Ошибка при старте polling:', details);
