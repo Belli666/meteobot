@@ -202,6 +202,7 @@ export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: Inl
   const stormAlertText = isKy ? `🚨 Бороон эскертүүсү: ${stormState}` : isEn ? `🚨 Storm alert: ${stormState}` : `🚨 Штормовой алерт: ${stormState}`;
   const langText = isKy ? `🌐 Тил: 🇰🇬 Кыргызча` : isEn ? `🌐 Language: 🇬🇧 English` : `🌐 Язык: 🇷🇺 Русский`;
   const regionText = isKy ? '🗺️ Облусту алмаштыруу' : isEn ? '🗺️ Change Region' : '🗺️ Выбрать область КР';
+  const resetText = isKy ? '🗑️ Дайындарды тазалоо / Сброс' : isEn ? '🗑️ Clear my data / Reset' : '🗑️ Сбросить память / данные';
   const backText = isKy ? '⬅️ Аба ырайына кайтуу' : isEn ? '⬅️ Back to weather' : '⬅️ Назад к погоде';
 
   return {
@@ -213,7 +214,30 @@ export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: Inl
         [{ text: stormAlertText, callback_data: 'toggle_storm' }],
         [{ text: langText, callback_data: 'choose_language' }],
         [{ text: regionText, callback_data: 'open_kg_regions' }],
+        [{ text: resetText, callback_data: 'request_reset' }],
         [{ text: backText, callback_data: 'weather_refresh' }],
+      ],
+    },
+  };
+}
+
+/**
+ * Клавиатура подтверждения очистки памяти
+ */
+export function getResetConfirmationKeyboard(lang: Language = 'ru'): { reply_markup: InlineKeyboardMarkup } {
+  const isKy = lang === 'ky';
+  const isEn = lang === 'en';
+
+  const confirmText = isKy ? '🗑️ Ооба, тазалоо' : isEn ? '🗑️ Yes, reset all' : '🗑️ Да, сбросить всё';
+  const cancelText = isKy ? '❌ Жок, артка' : isEn ? '❌ Cancel' : '❌ Отмена';
+
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: confirmText, callback_data: 'confirm_reset' },
+          { text: cancelText, callback_data: 'menu_settings' },
+        ],
       ],
     },
   };

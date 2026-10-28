@@ -29,6 +29,7 @@ import {
   getLanguageSelectionKeyboard,
   getKyrgyzstanRegionsKeyboard,
   getKyrgyzstanPlacesKeyboard,
+  getResetConfirmationKeyboard,
 } from './keyboards';
 import { Language, normalizeLang, I18N_TEXTS } from './i18n';
 import { KYRGYZ_REGIONS, ALL_KYRGYZ_PLACES } from './kyrgyzstanData';
@@ -282,6 +283,27 @@ export function initCommands(): void {
       return;
     }
 
+    if (
+      lower.includes('сброс') ||
+      lower.includes('тазалоо') ||
+      lower.includes('reset') ||
+      lower.includes('очистить память') ||
+      lower.includes('очистить')
+    ) {
+      const confirmPrompt =
+        lang === 'ky'
+          ? '⚠️ **Чын эле бардык сакталган дайындарды жана аймакты тазалагыңыз келеби?**'
+          : lang === 'en'
+          ? '⚠️ **Are you sure you want to clear your saved data and location?**'
+          : '⚠️ **Вы действительно хотите сбросить свои данные и регион?**';
+
+      await bot.sendMessage(chatId, confirmPrompt, {
+        parse_mode: 'Markdown',
+        ...getResetConfirmationKeyboard(lang),
+      });
+      return;
+    }
+
     // Если это поиск населенного пункта КР
     const queryToSearch = cleanQuery(text);
     await handleCitySearch(chatId, userId, queryToSearch);
@@ -500,6 +522,41 @@ export function initCommands(): void {
 
         const updated = getUser(userId)!;
         return sendUserWeather(chatId, updated);
+      }
+
+      // Запрос на сброс памяти
+      if (data === 'request_reset') {
+        const confirmPrompt =
+          lang === 'ky'
+            ? '⚠️ **Чын эле бардык сакталган дайындарды жана аймакты тазалагыңыз келеби?**'
+            : lang === 'en'
+            ? '⚠️ **Are you sure you want to clear your saved data and location?**'
+            : '⚠️ **Вы действительно хотите удалить все сохранённые данные и регион?**';
+
+        await bot.editMessageText(confirmPrompt, {
+          chat_id: chatId,
+          message_id: msg.message_id,
+          parse_mode: 'Markdown',
+          ...getResetConfirmationKeyboard(lang),
+        });
+        return;
+      }
+
+      // Подтверждение сброса памяти
+      if (data === 'confirm_reset') {
+        deleteUser(userId);
+        const resetNotice =
+          `🗑️ **Память очищена / Дайындар тазаланды / Memory cleared!**\n\n` +
+          `🇰🇬 Сиздин бардык орнотууларыңыз өчүрүлдү.\n` +
+          `🇷🇺 Все ваши сохранённые данные и регион сброшены.\n` +
+          `🇬🇧 All your saved settings and location have been reset.\n\n` +
+          I18N_TEXTS.welcomeMultilingual(query.from.first_name || 'Friend');
+
+        await bot.sendMessage(chatId, resetNotice, {
+          parse_mode: 'Markdown',
+          ...getLanguageSelectionKeyboard(),
+        });
+        return;
       }
     } catch (err: any) {
       console.error('Ошибка в callback query:', err);
