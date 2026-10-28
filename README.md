@@ -13,16 +13,12 @@ BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 DEFAULT_TIMEZONE=Europe/Moscow
 ```
 
-### 2. Запуск в режиме разработки (с автоперезагрузкой)
+### 2. Запуск бота
 ```bash
 cd /home/belli/meteobot
-npm run dev
-```
-
-### 3. Сборка и запуск в production
-```bash
-npm run build
-npm start
+npm run dev   # режим разработки (с автоперезагрузкой при сохранении файлов)
+# или
+npm start     # обычный запуск чистого TypeScript через tsx
 ```
 
 ---
