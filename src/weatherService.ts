@@ -6,6 +6,8 @@ import {
 } from './config';
 import { findLocalKyrgyzPlace } from './kyrgyzstanData';
 
+import { Language, normalizeLang, WEATHER_CODE_TRANSLATIONS } from './i18n';
+
 export interface GeocodeLocation {
   name: string;
   latitude: number;
@@ -71,83 +73,38 @@ export interface WeatherData {
   providerSource: string;
 }
 
-export function getWeatherDescription(code: number): { description: string; emoji: string } {
-  switch (code) {
-    case 0:
-      return { description: 'Ясно', emoji: '☀️' };
-    case 1:
-      return { description: 'В основном ясно', emoji: '🌤️' };
-    case 2:
-      return { description: 'Переменная облачность', emoji: '⛅' };
-    case 3:
-      return { description: 'Пасмурно', emoji: '☁️' };
-    case 45:
-    case 48:
-      return { description: 'Туман', emoji: '🌫️' };
-    case 51:
-      return { description: 'Легкая морось', emoji: '🌦️' };
-    case 53:
-      return { description: 'Морось', emoji: '🌦️' };
-    case 55:
-      return { description: 'Густая морось', emoji: '🌧️' };
-    case 56:
-    case 57:
-      return { description: 'Ледяная морось', emoji: '🌧️' };
-    case 61:
-      return { description: 'Слабый дождь', emoji: '🌧️' };
-    case 63:
-      return { description: 'Умеренный дождь', emoji: '🌧️' };
-    case 65:
-      return { description: 'Сильный дождь', emoji: '🌧️' };
-    case 66:
-    case 67:
-      return { description: 'Ледяной дождь', emoji: '🌨️' };
-    case 71:
-      return { description: 'Слабый снегопад', emoji: '🌨️' };
-    case 73:
-      return { description: 'Умеренный снегопад', emoji: '❄️' };
-    case 75:
-      return { description: 'Сильный снегопад', emoji: '❄️' };
-    case 77:
-      return { description: 'Снежная крупа', emoji: '❄️' };
-    case 80:
-      return { description: 'Кратковременный дождь', emoji: '🌦️' };
-    case 81:
-      return { description: 'Ливневый дождь', emoji: '🌧️' };
-    case 82:
-      return { description: 'Шквальный ливень', emoji: '⛈️' };
-    case 85:
-    case 86:
-      return { description: 'Снегопад зарядами', emoji: '🌨️' };
-    case 95:
-      return { description: 'Гроза', emoji: '⚡' };
-    case 96:
-    case 99:
-      return { description: 'Гроза с градом', emoji: '⛈️' };
-    default:
-      return { description: 'Облачно', emoji: '🌤️' };
+export function getWeatherDescription(code: number, lang: Language = 'ru'): { description: string; emoji: string } {
+  const normalized = normalizeLang(lang);
+  const table = WEATHER_CODE_TRANSLATIONS[normalized] || WEATHER_CODE_TRANSLATIONS.ru;
+  if (table[code]) {
+    return table[code];
   }
+  return normalized === 'ky'
+    ? { description: 'Булуттуу', emoji: '🌤️' }
+    : normalized === 'en'
+    ? { description: 'Cloudy', emoji: '🌤️' }
+    : { description: 'Облачно', emoji: '🌤️' };
 }
 
 /**
  * Поиск населенных пунктов строго в Кыргызстане (KG)
  */
-export async function searchCities(query: string): Promise<GeocodeLocation[]> {
+export async function searchCities(query: string, lang: Language = 'ru'): Promise<GeocodeLocation[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
   // 1. Сначала проверяем локальную базу городов и районов Кыргызстана
-  const localMatch = findLocalKyrgyzPlace(trimmed);
+  const localMatch = findLocalKyrgyzPlace(trimmed, lang);
   if (localMatch) {
     return [
       {
-        name: localMatch.name,
-        latitude: localMatch.latitude,
-        longitude: localMatch.longitude,
+        name: localMatch.displayName,
+        latitude: localMatch.place.latitude,
+        longitude: localMatch.place.longitude,
         country: 'Кыргызстан',
         countryCode: 'KG',
-        admin1: localMatch.region,
-        timezone: localMatch.timezone,
+        admin1: localMatch.displayRegion,
+        timezone: localMatch.place.timezone,
       },
     ];
   }
@@ -209,7 +166,8 @@ export async function fetchWeatherData(
   cityName: string,
   latitude: number,
   longitude: number,
-  timezone: string = DEFAULT_TIMEZONE
+  timezone: string = DEFAULT_TIMEZONE,
+  lang: Language = 'ru'
 ): Promise<WeatherData> {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
@@ -262,7 +220,7 @@ export async function fetchWeatherData(
 
   const data = (await res.json()) as any;
   const cur = data.current;
-  const curMeta = getWeatherDescription(cur.weather_code);
+  const curMeta = getWeatherDescription(cur.weather_code, lang);
   const pressureMmHg = Math.round(cur.surface_pressure * 0.750062);
 
   const current: CurrentWeather = {
@@ -289,7 +247,7 @@ export async function fetchWeatherData(
     if (startIndex === -1) startIndex = 0;
 
     for (let i = startIndex; i < Math.min(startIndex + 12, hourly.time.length); i++) {
-      const hMeta = getWeatherDescription(hourly.weather_code[i]);
+      const hMeta = getWeatherDescription(hourly.weather_code[i], lang);
       hourlyNext12h.push({
         time: hourly.time[i].slice(11, 16),
         temperature: Math.round(hourly.temperature_2m[i]),
@@ -307,7 +265,7 @@ export async function fetchWeatherData(
   const daily = data.daily;
   if (daily && daily.time) {
     for (let i = 0; i < daily.time.length; i++) {
-      const dMeta = getWeatherDescription(daily.weather_code[i]);
+      const dMeta = getWeatherDescription(daily.weather_code[i], lang);
       daily7Days.push({
         date: daily.time[i],
         tempMin: Math.round(daily.temperature_2m_min[i]),

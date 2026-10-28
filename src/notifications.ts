@@ -70,13 +70,15 @@ async function checkMorningBriefings(): Promise<void> {
     }
 
     try {
+      const lang = user.language || 'ru';
       const weather = await fetchWeatherData(
         user.city_name,
         user.latitude,
         user.longitude,
-        user.timezone
+        user.timezone,
+        lang
       );
-      const text = formatMorningBriefing(weather, user.first_name || 'друг');
+      const text = formatMorningBriefing(weather, user.first_name || 'друг', lang);
       await bot.sendMessage(user.id, text, { parse_mode: 'Markdown' });
       // Небольшая задержка между отправками для соблюдения Telegram Rate Limits
       await new Promise((res) => setTimeout(res, 200));

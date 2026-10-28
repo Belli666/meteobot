@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'fs';
 import path from 'path';
 import { DATABASE_PATH, DEFAULT_TIMEZONE } from './config';
+import { Language, normalizeLang } from './i18n';
 
 export interface UserRecord {
   id: number;
@@ -11,6 +12,7 @@ export interface UserRecord {
   latitude: number | null;
   longitude: number | null;
   timezone: string;
+  language: Language;
   notify_enabled: number;
   notify_time: string;
   alert_rain: number;
@@ -45,7 +47,8 @@ function initSchema(db: DatabaseSync): void {
       city_name TEXT,
       latitude REAL,
       longitude REAL,
-      timezone TEXT DEFAULT 'Europe/Moscow',
+      timezone TEXT DEFAULT 'Asia/Bishkek',
+      language TEXT DEFAULT 'ru',
       notify_enabled INTEGER DEFAULT 1,
       notify_time TEXT DEFAULT '07:30',
       alert_rain INTEGER DEFAULT 1,
@@ -56,29 +59,42 @@ function initSchema(db: DatabaseSync): void {
 
     CREATE INDEX IF NOT EXISTS idx_users_notify ON users(notify_enabled, notify_time);
   `);
+
+  // Безопасная миграция: если колонка language ещё не создана в существующей БД
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru';`);
+  } catch {
+    // Игнорируем ошибку, если колонка уже существует
+  }
 }
 
 export function getUser(telegramId: number): UserRecord | null {
   const db = getDb();
   const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
-  const row = stmt.get(telegramId) as UserRecord | undefined;
-  return row || null;
+  const row = stmt.get(telegramId) as any;
+  if (!row) return null;
+
+  return {
+    ...row,
+    language: normalizeLang(row.language),
+  };
 }
 
 export function registerOrUpdateUser(
   telegramId: number,
   firstName: string,
-  username?: string | null
+  username?: string | null,
+  lang: Language = 'ru'
 ): UserRecord {
   const db = getDb();
   const existing = getUser(telegramId);
 
   if (!existing) {
     const stmt = db.prepare(`
-      INSERT INTO users (id, first_name, username, timezone, notify_enabled, notify_time, alert_rain, alert_storm)
-      VALUES (?, ?, ?, ?, 1, '07:30', 1, 1)
+      INSERT INTO users (id, first_name, username, timezone, language, notify_enabled, notify_time, alert_rain, alert_storm)
+      VALUES (?, ?, ?, ?, ?, 1, '07:30', 1, 1)
     `);
-    stmt.run(telegramId, firstName, username || null, DEFAULT_TIMEZONE);
+    stmt.run(telegramId, firstName, username || null, DEFAULT_TIMEZONE, lang);
     return getUser(telegramId)!;
   }
 
@@ -90,6 +106,16 @@ export function registerOrUpdateUser(
   `);
   stmt.run(firstName, username || null, telegramId);
   return getUser(telegramId)!;
+}
+
+export function setUserLanguage(telegramId: number, language: Language): void {
+  const db = getDb();
+  const stmt = db.prepare(`
+    UPDATE users 
+    SET language = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  stmt.run(language, telegramId);
 }
 
 export function setUserLocation(
@@ -110,7 +136,7 @@ export function setUserLocation(
 
 export function updateUserSettings(
   telegramId: number,
-  settings: Partial<Pick<UserRecord, 'notify_enabled' | 'notify_time' | 'alert_rain' | 'alert_storm'>>
+  settings: Partial<Pick<UserRecord, 'notify_enabled' | 'notify_time' | 'alert_rain' | 'alert_storm' | 'language'>>
 ): void {
   const db = getDb();
   const current = getUser(telegramId);
@@ -120,13 +146,14 @@ export function updateUserSettings(
   const notify_time = settings.notify_time !== undefined ? settings.notify_time : current.notify_time;
   const alert_rain = settings.alert_rain !== undefined ? settings.alert_rain : current.alert_rain;
   const alert_storm = settings.alert_storm !== undefined ? settings.alert_storm : current.alert_storm;
+  const language = settings.language ? normalizeLang(settings.language) : current.language;
 
   const stmt = db.prepare(`
     UPDATE users 
-    SET notify_enabled = ?, notify_time = ?, alert_rain = ?, alert_storm = ?, updated_at = CURRENT_TIMESTAMP
+    SET notify_enabled = ?, notify_time = ?, alert_rain = ?, alert_storm = ?, language = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `);
-  stmt.run(notify_enabled, notify_time, alert_rain, alert_storm, telegramId);
+  stmt.run(notify_enabled, notify_time, alert_rain, alert_storm, language, telegramId);
 }
 
 export function getUsersForNotification(timeHHMM: string): UserRecord[] {
@@ -138,11 +165,19 @@ export function getUsersForNotification(timeHHMM: string): UserRecord[] {
       AND latitude IS NOT NULL 
       AND longitude IS NOT NULL
   `);
-  return stmt.all(timeHHMM) as unknown as UserRecord[];
+  const rows = stmt.all(timeHHMM) as any[];
+  return rows.map((r) => ({
+    ...r,
+    language: normalizeLang(r.language),
+  }));
 }
 
 export function getAllActiveUsers(): UserRecord[] {
   const db = getDb();
   const stmt = db.prepare('SELECT * FROM users WHERE latitude IS NOT NULL AND longitude IS NOT NULL');
-  return stmt.all() as unknown as UserRecord[];
+  const rows = stmt.all() as any[];
+  return rows.map((r) => ({
+    ...r,
+    language: normalizeLang(r.language),
+  }));
 }
