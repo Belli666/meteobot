@@ -28,8 +28,8 @@ export function getOnboardingReplyKeyboard(lang: Language = 'ru'): { reply_marku
   const isKy = lang === 'ky';
   const isEn = lang === 'en';
 
-  const bishkek = isKy ? '🏛️ Бишкек шаары' : isEn ? '🏛️ Bishkek' : '🏛️ Бишкек';
-  const osh = isKy ? '⛰️ Ош шаары' : isEn ? '⛰️ Osh' : '⛰️ г. Ош';
+  const bishkek = isKy ? '🏛️ Бишкек' : isEn ? '🏛️ Bishkek' : '🏛️ Бишкек';
+  const osh = isKy ? '⛰️ Ош' : isEn ? '⛰️ Osh' : '⛰️ г. Ош';
   const chuy = isKy ? '🌾 Чүй' : isEn ? '🌾 Chuy' : '🌾 Чуй';
   const ik = isKy ? '🌊 Ысык-Көл' : isEn ? '🌊 Issyk-Kul' : '🌊 Иссык-Куль';
   const oshObl = isKy ? '🏔️ Ош облусу' : isEn ? '🏔️ Osh reg.' : '🏔️ Ош обл.';
@@ -62,9 +62,9 @@ export function getMainReplyKeyboard(lang: Language = 'ru'): { reply_markup: Rep
   return {
     reply_markup: {
       keyboard: [
-        [{ text: b.myWeather[lang] }, { text: b.umbrella[lang] }, { text: b.clothing[lang] }],
-        [{ text: b.forecast3d[lang] }, { text: b.selectRegion[lang] }],
-        [{ text: b.settings[lang] }],
+        [{ text: b.myWeather[lang] }, { text: b.forecast3d[lang] }],
+        [{ text: b.selectRegion[lang] }, { text: b.settings[lang] }],
+        [{ text: b.sendLocation[lang], request_location: true }],
       ],
       resize_keyboard: true,
       one_time_keyboard: false,
@@ -121,63 +121,50 @@ export function getKyrgyzstanRegionsKeyboard(lang: Language = 'ru'): { reply_mar
 /**
  * Меню городов и районов конкретной области
  */
-export function getKyrgyzstanPlacesKeyboard(region: KyrgyzRegion, lang: Language = 'ru'): { reply_markup: InlineKeyboardMarkup } {
-  const buttons: { text: string; callback_data: string }[][] = [];
+export function getKyrgyzstanPlacesKeyboard(reg: KyrgyzRegion, lang: Language = 'ru'): { reply_markup: InlineKeyboardMarkup } {
+  const rows: { text: string; callback_data: string }[][] = [];
 
-  for (let i = 0; i < region.places.length; i += 2) {
-    const row = [
-      {
-        text: region.places[i].name[lang] || region.places[i].name.ru,
-        callback_data: `kg_place:${region.places[i].id}`,
-      },
-    ];
-    if (region.places[i + 1]) {
-      row.push({
-        text: region.places[i + 1].name[lang] || region.places[i + 1].name.ru,
-        callback_data: `kg_place:${region.places[i + 1].id}`,
-      });
+  for (let i = 0; i < reg.places.length; i += 2) {
+    const p1 = reg.places[i];
+    const p2 = reg.places[i + 1];
+
+    const row = [{ text: p1.name[lang] || p1.name.ru, callback_data: `kg_place:${p1.id}` }];
+    if (p2) {
+      row.push({ text: p2.name[lang] || p2.name.ru, callback_data: `kg_place:${p2.id}` });
     }
-    buttons.push(row);
+    rows.push(row);
   }
 
-  const backLabel = I18N_TEXTS.buttons.back[lang];
-  buttons.push([{ text: `⬅️ ${backLabel}`, callback_data: 'open_kg_regions' }]);
+  const backText = lang === 'ky' ? '⬅️ Облустарга кайтуу' : lang === 'en' ? '⬅️ Back to regions' : '⬅️ Назад к областям';
+  rows.push([{ text: backText, callback_data: 'open_kg_regions' }]);
 
   return {
     reply_markup: {
-      inline_keyboard: buttons,
+      inline_keyboard: rows,
     },
   };
 }
 
 /**
- * Интерактивное Inline-меню под карточкой погоды
+ * Компактное Inline-меню под главной карточкой погоды (по фидбеку QA)
  */
 export function getWeatherInlineKeyboard(lang: Language = 'ru'): { reply_markup: InlineKeyboardMarkup } {
-  const isKy = lang === 'ky';
-  const isEn = lang === 'en';
-
-  const refreshText = isKy ? '🔄 Жаңылоо' : isEn ? '🔄 Refresh' : '🔄 Обновить';
-  const forecastText = isKy ? '📅 3 күндүк божомол' : isEn ? '📅 3-Day Forecast' : '📅 Прогноз 3 дня';
-  const umbrellaText = isKy ? '☂️ Кол чатыр керекпи?' : isEn ? '☂️ Umbrella needed?' : '☂️ Нужен ли зонт?';
-  const clothingText = isKy ? '🧥 Эмне кийүү керек?' : isEn ? '🧥 What to wear?' : '🧥 Что надеть?';
-  const regionText = isKy ? '🗺️ Облусту алмаштыруу' : isEn ? '🗺️ Change Region' : '🗺️ Сменить область КР';
-  const settingsText = isKy ? '⚙️ Ырастоолор' : isEn ? '⚙️ Settings' : '⚙️ Настройки';
+  const b = I18N_TEXTS.buttons;
 
   return {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: refreshText, callback_data: 'weather_refresh' },
-          { text: forecastText, callback_data: 'weather_3d' },
+          { text: b.hourly[lang], callback_data: 'weather_hourly' },
+          { text: b.forecast3d[lang], callback_data: 'weather_3d' },
         ],
         [
-          { text: umbrellaText, callback_data: 'advice_umbrella' },
-          { text: clothingText, callback_data: 'advice_clothing' },
+          { text: b.details[lang], callback_data: 'weather_details' },
+          { text: b.selectRegion[lang], callback_data: 'open_kg_regions' },
         ],
         [
-          { text: regionText, callback_data: 'open_kg_regions' },
-          { text: settingsText, callback_data: 'menu_settings' },
+          { text: b.refresh[lang], callback_data: 'weather_refresh' },
+          { text: b.settings[lang], callback_data: 'menu_settings' },
         ],
       ],
     },
@@ -185,7 +172,25 @@ export function getWeatherInlineKeyboard(lang: Language = 'ru'): { reply_markup:
 }
 
 /**
- * Меню настроек уведомлений
+ * Подменю для экранов деталей, почасового и 3-дневного прогноза
+ */
+export function getWeatherSubScreenKeyboard(lang: Language = 'ru'): { reply_markup: InlineKeyboardMarkup } {
+  const b = I18N_TEXTS.buttons;
+
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: b.backToWeather[lang], callback_data: 'weather_main' },
+          { text: b.refresh[lang], callback_data: 'weather_refresh' },
+        ],
+      ],
+    },
+  };
+}
+
+/**
+ * Упрощённое меню настроек
  */
 export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: InlineKeyboardMarkup } {
   const lang = user.language || 'ru';
@@ -196,26 +201,35 @@ export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: Inl
   const rainState = user.alert_rain ? I18N_TEXTS.enabled[lang] : I18N_TEXTS.disabled[lang];
   const stormState = user.alert_storm ? I18N_TEXTS.enabled[lang] : I18N_TEXTS.disabled[lang];
 
-  const morningText = isKy ? `🔔 Эртең мененки маалымат: ${notifyState}` : isEn ? `🔔 Daily Briefing: ${notifyState}` : `🔔 Утренний брифинг: ${notifyState}`;
-  const timeText = isKy ? `⏰ Убактысы: ${user.notify_time || '07:30'} (Бишкек)` : isEn ? `⏰ Time: ${user.notify_time || '07:30'} (Bishkek)` : `⏰ Время: ${user.notify_time || '07:30'} (Бишкек)`;
-  const rainAlertText = isKy ? `☔ Жамгыр эскертүүсү: ${rainState}` : isEn ? `☔ Rain alert: ${rainState}` : `☔ Оповещение о дожде: ${rainState}`;
-  const stormAlertText = isKy ? `🚨 Бороон эскертүүсү: ${stormState}` : isEn ? `🚨 Storm alert: ${stormState}` : `🚨 Штормовой алерт: ${stormState}`;
-  const langText = isKy ? `🌐 Тил: 🇰🇬 Кыргызча` : isEn ? `🌐 Language: 🇬🇧 English` : `🌐 Язык: 🇷🇺 Русский`;
-  const regionText = isKy ? '🗺️ Облусту алмаштыруу' : isEn ? '🗺️ Change Region' : '🗺️ Выбрать область КР';
-  const resetText = isKy ? '🗑️ Дайындарды тазалоо / Сброс' : isEn ? '🗑️ Clear my data / Reset' : '🗑️ Сбросить память / данные';
-  const backText = isKy ? '⬅️ Аба ырайына кайтуу' : isEn ? '⬅️ Back to weather' : '⬅️ Назад к погоде';
+  // Полное время с минутами
+  let cleanTime = user.notify_time || '07:30';
+  if (cleanTime.length <= 2) {
+    cleanTime = `${cleanTime.padStart(2, '0')}:00`;
+  }
+
+  const morningText = `🔔 ${I18N_TEXTS.settingsMorning[lang]} ${notifyState}`;
+  const timeText = `⏰ ${cleanTime} (Asia/Bishkek)`;
+  const rainAlertText = `☔ ${I18N_TEXTS.settingsRain[lang]} ${rainState}`;
+  const stormAlertText = `🚨 ${I18N_TEXTS.settingsStorm[lang]} ${stormState}`;
+
+  const langText = isKy ? `🌐 Тил: Кыргызча 🇰🇬` : isEn ? `🌐 Lang: English 🇬🇧` : `🌐 Язык: Русский 🇷🇺`;
+  const regionText = isKy ? '🗺️ Сменить регион' : isEn ? '🗺️ Change region' : '🗺️ Сменить регион';
+  const resetText = isKy ? '🗑️ Баарын тазалоо / Сброс' : isEn ? '🗑️ Reset settings' : '🗑️ Сбросить настройки';
+  const backText = I18N_TEXTS.buttons.backToWeather[lang];
 
   return {
     reply_markup: {
       inline_keyboard: [
         [{ text: morningText, callback_data: 'toggle_notify' }],
         [{ text: timeText, callback_data: 'choose_time' }],
-        [{ text: rainAlertText, callback_data: 'toggle_rain' }],
-        [{ text: stormAlertText, callback_data: 'toggle_storm' }],
+        [
+          { text: rainAlertText, callback_data: 'toggle_rain' },
+          { text: stormAlertText, callback_data: 'toggle_storm' },
+        ],
         [{ text: langText, callback_data: 'choose_language' }],
         [{ text: regionText, callback_data: 'open_kg_regions' }],
         [{ text: resetText, callback_data: 'request_reset' }],
-        [{ text: backText, callback_data: 'weather_refresh' }],
+        [{ text: backText, callback_data: 'weather_main' }],
       ],
     },
   };
@@ -247,7 +261,10 @@ export function getResetConfirmationKeyboard(lang: Language = 'ru'): { reply_mar
  * Выбор времени утреннего брифинга (по времени Бишкека / UTC+6)
  */
 export function getTimeChoiceKeyboard(lang: Language = 'ru'): { reply_markup: InlineKeyboardMarkup } {
-  const backText = I18N_TEXTS.buttons.back[lang];
+  const isKy = lang === 'ky';
+  const isEn = lang === 'en';
+  const backText = isKy ? '⬅️ Ырастоолорго кайтуу' : isEn ? '⬅️ Back to settings' : '⬅️ Назад к настройкам';
+
   return {
     reply_markup: {
       inline_keyboard: [
@@ -262,7 +279,7 @@ export function getTimeChoiceKeyboard(lang: Language = 'ru'): { reply_markup: In
           { text: '09:00', callback_data: 'set_time:09:00' },
         ],
         [
-          { text: `⬅️ ${backText}`, callback_data: 'menu_settings' },
+          { text: backText, callback_data: 'menu_settings' },
         ],
       ],
     },

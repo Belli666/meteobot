@@ -17,13 +17,15 @@ import {
 } from './weatherService';
 import {
   formatWeatherMessage,
+  formatWeatherDetailsMessage,
+  formatHourlyForecastMessage,
   formatForecast3Days,
-  generateAdvice,
 } from './advisor';
 import {
   getOnboardingReplyKeyboard,
   getMainReplyKeyboard,
   getWeatherInlineKeyboard,
+  getWeatherSubScreenKeyboard,
   getSettingsInlineKeyboard,
   getTimeChoiceKeyboard,
   getLanguageSelectionKeyboard,
@@ -33,6 +35,7 @@ import {
 } from './keyboards';
 import { Language, normalizeLang, I18N_TEXTS } from './i18n';
 import { KYRGYZ_REGIONS, ALL_KYRGYZ_PLACES } from './kyrgyzstanData';
+import { escapeHtml, safeSendMessage, safeEditMessageText } from './telegramSafe';
 
 function cleanQuery(text: string): string {
   // Убираем ведущие эмодзи вроде '🏛️ Бишкек' -> 'Бишкек'
@@ -42,271 +45,286 @@ function cleanQuery(text: string): string {
 export function initCommands(): void {
   // Команда /start
   bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
-    const from = msg.from;
-    if (!from) return;
+    try {
+      const chatId = msg.chat.id;
+      const from = msg.from;
+      if (!from) return;
 
-    const user = registerOrUpdateUser(from.id, from.first_name || 'Friend', from.username);
+      const user = registerOrUpdateUser(from.id, from.first_name || 'Friend', from.username);
 
-    // Если локация ещё не задана — показываем ТРЕХЪЯЗЫЧНОЕ приветствие с выбором языка
-    if (!user.city_name || !user.latitude || !user.longitude) {
-      await bot.sendMessage(chatId, I18N_TEXTS.welcomeMultilingual(from.first_name || 'Friend'), {
-        parse_mode: 'Markdown',
-        ...getLanguageSelectionKeyboard(),
-      });
-      return;
+      // Если локация ещё не задана — показываем ТРЕХЪЯЗЫЧНОЕ приветствие с выбором языка
+      if (!user.city_name || !user.latitude || !user.longitude) {
+        await safeSendMessage(bot, chatId, I18N_TEXTS.welcomeMultilingual(from.first_name || 'Friend'), {
+          ...getLanguageSelectionKeyboard(),
+        });
+        return;
+      }
+
+      // Если локация уже есть — показываем главную карточку погоды
+      await sendUserWeather(chatId, user);
+    } catch (err: any) {
+      console.error('❌ [/start] Ошибка:', err);
     }
-
-    // Если локация уже есть — показываем погоду на языке пользователя
-    await sendUserWeather(chatId, user);
   });
 
   // Команда сброса памяти о пользователе (/reset)
   bot.onText(/\/reset/, async (msg) => {
-    const from = msg.from;
-    if (!from) return;
+    try {
+      const from = msg.from;
+      if (!from) return;
 
-    deleteUser(from.id);
+      deleteUser(from.id);
 
-    const resetNotice =
-      `🗑️ **Память очищена / Дайындар тазаланды / Memory cleared!**\n\n` +
-      `🇰🇬 Сиздин бардык орнотууларыңыз өчүрүлдү.\n` +
-      `🇷🇺 Все ваши сохранённые данные и регион сброшены.\n` +
-      `🇬🇧 All your saved settings and location have been reset.\n\n` +
-      I18N_TEXTS.welcomeMultilingual(from.first_name || 'Friend');
+      const resetNotice =
+        `🗑️ <b>Память очищена / Дайындар тазаланды / Memory cleared!</b>\n\n` +
+        `🇰🇬 Сиздин бардык орнотууларыңыз өчүрүлдү.\n` +
+        `🇷🇺 Все ваши сохранённые данные и регион сброшены.\n` +
+        `🇬🇧 All your saved settings and location have been reset.\n\n` +
+        I18N_TEXTS.welcomeMultilingual(from.first_name || 'Friend');
 
-    await bot.sendMessage(msg.chat.id, resetNotice, {
-      parse_mode: 'Markdown',
-      ...getLanguageSelectionKeyboard(),
-    });
+      await safeSendMessage(bot, msg.chat.id, resetNotice, {
+        ...getLanguageSelectionKeyboard(),
+      });
+    } catch (err: any) {
+      console.error('❌ [/reset] Ошибка:', err);
+    }
   });
 
   // Команда смены языка /language или /lang
   bot.onText(/\/(language|lang)/, async (msg) => {
-    await bot.sendMessage(
-      msg.chat.id,
-      '🌐 **Тилди тандаңыз / Выберите язык / Select language:**',
-      {
-        parse_mode: 'Markdown',
-        ...getLanguageSelectionKeyboard(),
-      }
-    );
+    try {
+      await safeSendMessage(
+        bot,
+        msg.chat.id,
+        '🌐 <b>Тилди тандаңыз / Выберите язык / Select language:</b>',
+        {
+          ...getLanguageSelectionKeyboard(),
+        }
+      );
+    } catch (err: any) {
+      console.error('❌ [/language] Ошибка:', err);
+    }
   });
 
   // Команда выбора областей /regions
   bot.onText(/\/regions/, async (msg) => {
-    const user = getUser(msg.from?.id || 0);
-    const lang = user?.language || 'ru';
-    await bot.sendMessage(msg.chat.id, I18N_TEXTS.chooseRegionPrompt[lang], {
-      parse_mode: 'Markdown',
-      ...getKyrgyzstanRegionsKeyboard(lang),
-    });
+    try {
+      const user = getUser(msg.from?.id || 0);
+      const lang = user?.language || 'ru';
+      await safeSendMessage(bot, msg.chat.id, I18N_TEXTS.chooseRegionPrompt[lang], {
+        ...getKyrgyzstanRegionsKeyboard(lang),
+      });
+    } catch (err: any) {
+      console.error('❌ [/regions] Ошибка:', err);
+    }
   });
 
   // Команда /help
   bot.onText(/\/help/, async (msg) => {
-    const user = getUser(msg.from?.id || 0);
-    const lang = user?.language || 'ru';
-    const isKy = lang === 'ky';
-    const isEn = lang === 'en';
+    try {
+      const user = getUser(msg.from?.id || 0);
+      const lang = user?.language || 'ru';
+      const isKy = lang === 'ky';
+      const isEn = lang === 'en';
 
-    const helpText = isKy
-      ? `📖 **MeteoBot буйруктары:**\n\n` +
-        `• /start — ботту кайра баштоо жана башкы меню\n` +
-        `• /weather — учурдагы аба ырайы жана кеңештер\n` +
-        `• /umbrella — кол чатыр алуу керекпи толук анализи\n` +
-        `• /forecast — 3 күндүк божомол\n` +
-        `• /regions — Кыргызстандын 7 облусун тандоо\n` +
-        `• /language — тилди алмаштыруу (Кыргызча/Русский/English)\n` +
-        `• /settings — билдирүүлөрдү жана эртең мененки убакытты тууралоо\n` +
-        `• /city <айыл/шаар> — Кыргызстандын каалаган жеринен аба ырайын билүү\n\n` +
-        `💡 *Кыргызстандын каалаган жеринин атын түз эле чатка жазсаңыз да болот!*`
-      : isEn
-      ? `📖 **MeteoBot Commands:**\n\n` +
-        `• /start — Restart the bot and open main menu\n` +
-        `• /weather — Current weather and advice\n` +
-        `• /umbrella — Detailed umbrella and precipitation check\n` +
-        `• /forecast — 3-day forecast\n` +
-        `• /regions — Select one of 7 Kyrgyzstan regions\n` +
-        `• /language — Change language (Kyrgyz / Russian / English)\n` +
-        `• /settings — Notification settings & briefing time\n` +
-        `• /city <city> — Check weather in any Kyrgyzstan location\n\n` +
-        `💡 *You can also simply type any Kyrgyz city or village name in chat!*`
-      : `📖 **Команды MeteoBot:**\n\n` +
-        `• /start — перезапустить бота и открыть главное меню\n` +
-        `• /weather — текущая погода и советы\n` +
-        `• /umbrella — подробный анализ: нужен ли зонт сегодня\n` +
-        `• /forecast — прогноз на 3 дня\n` +
-        `• /regions — выбор из 7 областей Кыргызстана\n` +
-        `• /language — смена языка (Кыргызча / Русский / English)\n` +
-        `• /settings — настройки утренней рассылки и алертов\n` +
-        `• /city <город> — узнать погоду в любом городе Кыргызстана\n\n` +
-        `💡 *Вы можете просто написать название села или города Кыргызстана в чат!*`;
+      const helpText = isKy
+        ? `📖 <b>MeteoBot буйруктары:</b>\n\n` +
+          `• /start — башкы меню жана учурдагы аба ырайы\n` +
+          `• /weather — компакттуу аба ырайы карточкасы\n` +
+          `• /forecast — 3 күндүк толук божомол\n` +
+          `• /regions — Кыргызстандын 7 облусун тандоо\n` +
+          `• /language — тилди алмаштыруу (Кыргызча/Русский/English)\n` +
+          `• /settings — утренний брифинг жана эскертүүлөр\n` +
+          `• /city &lt;айыл/шаар&gt; — Кыргызстандын каалаган жери боюнча аба ырайы\n\n` +
+          `💡 <i>Кыргызстандын каалаган айыл же шаарынын атын чатка түз жазсаңыз болот!</i>`
+        : isEn
+        ? `📖 <b>MeteoBot Commands:</b>\n\n` +
+          `• /start — Main menu and current weather card\n` +
+          `• /weather — Compact weather card & advice\n` +
+          `• /forecast — 3-day detailed forecast\n` +
+          `• /regions — Choose from 7 regions of Kyrgyzstan\n` +
+          `• /language — Switch language (Kyrgyz / Russian / English)\n` +
+          `• /settings — Daily morning briefing & alerts\n` +
+          `• /city &lt;name&gt; — Weather in any Kyrgyz city/village\n\n` +
+          `💡 <i>You can also directly type any Kyrgyz city or village name in chat!</i>`
+        : `📖 <b>Команды MeteoBot:</b>\n\n` +
+          `• /start — главное меню и карточка погоды\n` +
+          `• /weather — компактная карточка погоды и советы\n` +
+          `• /forecast — прогноз погоды на 3 дня\n` +
+          `• /regions — выбор из 7 областей Кыргызстана\n` +
+          `• /language — смена языка (Кыргызча / Русский / English)\n` +
+          `• /settings — настройки утренней сводки и алертов\n` +
+          `• /city &lt;город&gt; — узнать погоду в любом селе/городе КР\n\n` +
+          `💡 <i>Вы можете просто написать название любого города или села Кыргызстана в чат!</i>`;
 
-    await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
+      await safeSendMessage(bot, msg.chat.id, helpText);
+    } catch (err: any) {
+      console.error('❌ [/help] Ошибка:', err);
+    }
   });
 
-  // Команды /weather, /forecast, /umbrella, /settings
   bot.onText(/\/weather/, async (msg) => {
-    const user = getUser(msg.from?.id || 0);
-    if (!user || !user.latitude) return askForLocation(msg.chat.id);
-    await sendUserWeather(msg.chat.id, user);
+    try {
+      const user = getUser(msg.from?.id || 0);
+      if (!user || !user.latitude) return askForLocation(msg.chat.id);
+      await sendUserWeather(msg.chat.id, user);
+    } catch (err: any) {
+      console.error('❌ [/weather] Ошибка:', err);
+    }
   });
 
   bot.onText(/\/forecast/, async (msg) => {
-    const user = getUser(msg.from?.id || 0);
-    if (!user || !user.latitude) return askForLocation(msg.chat.id);
-    await sendForecast(msg.chat.id, user);
-  });
-
-  bot.onText(/\/umbrella/, async (msg) => {
-    const user = getUser(msg.from?.id || 0);
-    if (!user || !user.latitude) return askForLocation(msg.chat.id);
-    await sendUmbrellaDetails(msg.chat.id, user);
+    try {
+      const user = getUser(msg.from?.id || 0);
+      if (!user || !user.latitude) return askForLocation(msg.chat.id);
+      await sendForecast(msg.chat.id, user);
+    } catch (err: any) {
+      console.error('❌ [/forecast] Ошибка:', err);
+    }
   });
 
   bot.onText(/\/settings/, async (msg) => {
-    const user = getUser(msg.from?.id || 0);
-    if (!user) return;
-    await sendSettingsMenu(msg.chat.id, user);
+    try {
+      const user = getUser(msg.from?.id || 0);
+      if (!user) return;
+      await sendSettingsMenu(msg.chat.id, user);
+    } catch (err: any) {
+      console.error('❌ [/settings] Ошибка:', err);
+    }
   });
 
   bot.onText(/\/city (.+)/, async (msg, match) => {
-    const query = match ? match[1].trim() : '';
-    if (!query) return;
-    await handleCitySearch(msg.chat.id, msg.from?.id || 0, query);
+    try {
+      const query = match ? match[1].trim() : '';
+      if (!query) return;
+      await handleCitySearch(msg.chat.id, msg.from?.id || 0, query);
+    } catch (err: any) {
+      console.error('❌ [/city] Ошибка:', err);
+    }
   });
 
   // Обработка отправки геопозиции
   bot.on('location', async (msg) => {
-    const loc = msg.location;
-    if (!loc || !msg.from) return;
-
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const user = getUser(userId);
-    const lang = user?.language || 'ru';
-
-    const locatingMsg =
-      lang === 'ky'
-        ? '🛰️ Координаттар боюнча аймагыңыз аныкталууда...'
-        : lang === 'en'
-        ? '🛰️ Determining your Kyrgyzstan region from coordinates...'
-        : '🛰️ По координатам определяем ваш регион Кыргызстана...';
-
-    await bot.sendMessage(chatId, locatingMsg);
-
     try {
-      const cityName = await reverseGeocode(loc.latitude, loc.longitude);
-      setUserLocation(userId, cityName, loc.latitude, loc.longitude);
+      const loc = msg.location;
+      if (!loc || !msg.from) return;
 
-      await bot.sendMessage(
-        chatId,
-        I18N_TEXTS.locationSaved[lang](cityName),
-        {
-          parse_mode: 'Markdown',
-          ...getMainReplyKeyboard(lang),
+      const chatId = msg.chat.id;
+      const userId = msg.from.id;
+      const user = getUser(userId);
+      const lang = user?.language || 'ru';
+
+      const locatingMsg =
+        lang === 'ky'
+          ? '🛰️ Координаттар боюнча аймагыңыз аныкталууда...'
+          : lang === 'en'
+          ? '🛰️ Determining your location in Kyrgyzstan...'
+          : '🛰️ По координатам определяем ваш регион Кыргызстана...';
+
+      await safeSendMessage(bot, chatId, locatingMsg);
+
+      try {
+        const cityName = await reverseGeocode(loc.latitude, loc.longitude);
+        setUserLocation(userId, cityName, loc.latitude, loc.longitude);
+
+        await safeSendMessage(
+          bot,
+          chatId,
+          I18N_TEXTS.locationSaved[lang](cityName),
+          { ...getMainReplyKeyboard(lang) }
+        );
+
+        const updatedUser = getUser(userId);
+        if (updatedUser) {
+          await sendUserWeather(chatId, updatedUser);
         }
-      );
-
-      const updatedUser = getUser(userId);
-      if (updatedUser) {
-        await sendUserWeather(chatId, updatedUser);
+      } catch (err: any) {
+        console.error('Ошибка геолокации:', err);
+        const errMsg =
+          lang === 'ky'
+            ? '❌ Аймакты аныктоо мүмкүн болгон жок. Төмөнкү тизмеден облусту тандаңыз:'
+            : lang === 'en'
+            ? '❌ Could not determine region by coordinates. Please select from regions:'
+            : '❌ Не удалось определить регион. Выберите область из списка:';
+        await safeSendMessage(bot, chatId, errMsg, { ...getKyrgyzstanRegionsKeyboard(lang) });
       }
     } catch (err: any) {
-      console.error('Ошибка геолокации:', err);
-      const errMsg =
-        lang === 'ky'
-          ? '❌ Аймакты аныктоо мүмкүн болгон жок. Төмөнкү тизмеден облусту тандаңыз:'
-          : lang === 'en'
-          ? '❌ Could not determine region by coordinates. Please select from regions:'
-          : '❌ Не удалось определить регион. Выберите область из списка:';
-      await bot.sendMessage(chatId, errMsg, { ...getKyrgyzstanRegionsKeyboard(lang) });
+      console.error('❌ [location] Ошибка:', err);
     }
   });
 
   // Обработка текстовых сообщений
   bot.on('message', async (msg) => {
-    if (!msg.text || msg.text.startsWith('/') || msg.location) return;
+    try {
+      if (!msg.text || msg.text.startsWith('/') || msg.location) return;
 
-    const text = msg.text.trim();
-    const chatId = msg.chat.id;
-    const userId = msg.from?.id || 0;
-    const user = getUser(userId);
-    const lang = user?.language || 'ru';
+      const text = msg.text.trim();
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id || 0;
+      const user = getUser(userId);
+      const lang = user?.language || 'ru';
 
-    // Проверка кнопок нижней панели (мультиязычная)
-    const lower = text.toLowerCase();
+      const lower = text.toLowerCase();
 
-    if (lower.includes('аба ырайым') || lower.includes('моя погода') || lower.includes('my weather')) {
-      if (!user || !user.latitude) return askForLocation(chatId, lang);
-      return sendUserWeather(chatId, user);
+      // Проверка кнопок нижней панели
+      if (lower.includes('аба ырай') || lower.includes('моя погода') || lower.includes('my weather')) {
+        if (!user || !user.latitude) return askForLocation(chatId, lang);
+        return sendUserWeather(chatId, user);
+      }
+
+      if (lower.includes('божомол') || lower.includes('прогноз') || lower.includes('forecast') || lower.includes('3 күндүк') || lower.includes('на 3 дня')) {
+        if (!user || !user.latitude) return askForLocation(chatId, lang);
+        return sendForecast(chatId, user);
+      }
+
+      if (lower.includes('ырастоолор') || lower.includes('настройки') || lower.includes('settings')) {
+        if (!user) return;
+        return sendSettingsMenu(chatId, user);
+      }
+
+      if (lower.includes('облус') || lower.includes('область') || lower.includes('регион') || lower.includes('город') || lower.includes('аймак') || lower.includes('city')) {
+        await safeSendMessage(bot, chatId, I18N_TEXTS.chooseRegionPrompt[lang], {
+          ...getKyrgyzstanRegionsKeyboard(lang),
+        });
+        return;
+      }
+
+      if (lower.includes('тил') || lower.includes('язык') || lower.includes('language')) {
+        await safeSendMessage(
+          bot,
+          chatId,
+          '🌐 <b>Тилди тандаңыз / Выберите язык / Select language:</b>',
+          { ...getLanguageSelectionKeyboard() }
+        );
+        return;
+      }
+
+      if (
+        lower.includes('сброс') ||
+        lower.includes('тазалоо') ||
+        lower.includes('reset') ||
+        lower.includes('очистить память') ||
+        lower.includes('очистить')
+      ) {
+        const confirmPrompt =
+          lang === 'ky'
+            ? '⚠️ <b>Чын эле бардык сакталган дайындарды жана аймакты тазалагыңыз келеби?</b>'
+            : lang === 'en'
+            ? '⚠️ <b>Are you sure you want to clear your saved data and location?</b>'
+            : '⚠️ <b>Вы действительно хотите сбросить свои настройки и регион?</b>';
+
+        await safeSendMessage(bot, chatId, confirmPrompt, {
+          ...getResetConfirmationKeyboard(lang),
+        });
+        return;
+      }
+
+      // Поиск населенного пункта КР
+      const queryToSearch = cleanQuery(text);
+      await handleCitySearch(chatId, userId, queryToSearch);
+    } catch (err: any) {
+      console.error('❌ [message] Ошибка:', err);
     }
-
-    if (lower.includes('кол чатыр') || lower.includes('зонт') || lower.includes('umbrella')) {
-      if (!user || !user.latitude) return askForLocation(chatId, lang);
-      return sendUmbrellaDetails(chatId, user);
-    }
-
-    if (lower.includes('кийүү') || lower.includes('надеть') || lower.includes('wear')) {
-      if (!user || !user.latitude) return askForLocation(chatId, lang);
-      return sendClothingDetails(chatId, user);
-    }
-
-    if (lower.includes('божомол') || lower.includes('прогноз') || lower.includes('forecast')) {
-      if (!user || !user.latitude) return askForLocation(chatId, lang);
-      return sendForecast(chatId, user);
-    }
-
-    if (lower.includes('ырастоолор') || lower.includes('настройки') || lower.includes('settings')) {
-      if (!user) return;
-      return sendSettingsMenu(chatId, user);
-    }
-
-    if (lower.includes('облус') || lower.includes('область') || lower.includes('region')) {
-      await bot.sendMessage(chatId, I18N_TEXTS.chooseRegionPrompt[lang], {
-        parse_mode: 'Markdown',
-        ...getKyrgyzstanRegionsKeyboard(lang),
-      });
-      return;
-    }
-
-    if (lower.includes('тил') || lower.includes('язык') || lower.includes('language')) {
-      await bot.sendMessage(
-        chatId,
-        '🌐 **Тилди тандаңыз / Выберите язык / Select language:**',
-        {
-          parse_mode: 'Markdown',
-          ...getLanguageSelectionKeyboard(),
-        }
-      );
-      return;
-    }
-
-    if (
-      lower.includes('сброс') ||
-      lower.includes('тазалоо') ||
-      lower.includes('reset') ||
-      lower.includes('очистить память') ||
-      lower.includes('очистить')
-    ) {
-      const confirmPrompt =
-        lang === 'ky'
-          ? '⚠️ **Чын эле бардык сакталган дайындарды жана аймакты тазалагыңыз келеби?**'
-          : lang === 'en'
-          ? '⚠️ **Are you sure you want to clear your saved data and location?**'
-          : '⚠️ **Вы действительно хотите сбросить свои данные и регион?**';
-
-      await bot.sendMessage(chatId, confirmPrompt, {
-        parse_mode: 'Markdown',
-        ...getResetConfirmationKeyboard(lang),
-      });
-      return;
-    }
-
-    // Если это поиск населенного пункта КР
-    const queryToSearch = cleanQuery(text);
-    await handleCitySearch(chatId, userId, queryToSearch);
   });
 
   // Обработка Inline-кнопок
@@ -320,7 +338,11 @@ export function initCommands(): void {
     const user = getUser(userId);
     const lang = user?.language || 'ru';
 
-    await bot.answerCallbackQuery(query.id);
+    try {
+      await bot.answerCallbackQuery(query.id);
+    } catch {
+      // Игнорируем устаревшие callback queries
+    }
 
     try {
       // 1. Выбор языка
@@ -331,48 +353,48 @@ export function initCommands(): void {
 
         // Если локация ещё не задана — показываем выбор области КР на выбранном языке
         if (!updated.city_name || !updated.latitude) {
-          await bot.sendMessage(
+          await safeSendMessage(
+            bot,
             chatId,
             I18N_TEXTS.languageSelectedMsg[selectedLang] + '\n\n' + I18N_TEXTS.chooseRegionPrompt[selectedLang],
             {
-              parse_mode: 'Markdown',
               ...getKyrgyzstanRegionsKeyboard(selectedLang),
             }
           );
-          // Устанавливаем соответствующую нижнюю панель
-          await bot.sendMessage(
+          await safeSendMessage(
+            bot,
             chatId,
-            selectedLang === 'ky' ? '👇 Төмөндөн баскычтарды колдоно аласыз:' : selectedLang === 'en' ? '👇 You can also use the buttons below:' : '👇 Ниже доступна панель быстрого доступа:',
+            selectedLang === 'ky' ? '👇 Төмөндөн баскычтарды колдоно аласыз:' : selectedLang === 'en' ? '👇 Quick access panel:' : '👇 Ниже доступна панель быстрого доступа:',
             { ...getOnboardingReplyKeyboard(selectedLang) }
           );
           return;
         }
 
-        // Если локация уже была — подтверждаем и обновляем погоду на новом языке
-        await bot.sendMessage(chatId, I18N_TEXTS.languageSelectedMsg[selectedLang], {
-          parse_mode: 'Markdown',
+        // Если локация уже была — обновляем главное меню и карточку погоды
+        await safeSendMessage(bot, chatId, I18N_TEXTS.languageSelectedMsg[selectedLang], {
           ...getMainReplyKeyboard(selectedLang),
         });
         return sendUserWeather(chatId, updated);
       }
 
-      // Открытие меню выбора языка из настроек
       if (data === 'choose_language') {
-        await bot.editMessageText('🌐 **Тилди тандаңыз / Выберите язык / Select language:**', {
-          chat_id: chatId,
-          message_id: msg.message_id,
-          parse_mode: 'Markdown',
-          ...getLanguageSelectionKeyboard(),
-        });
+        await safeEditMessageText(
+          bot,
+          '🌐 <b>Тилди тандаңыз / Выберите язык / Select language:</b>',
+          {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            ...getLanguageSelectionKeyboard(),
+          }
+        );
         return;
       }
 
       // 2. Выбор области Кыргызстана
       if (data === 'open_kg_regions') {
-        await bot.editMessageText(I18N_TEXTS.chooseRegionPrompt[lang], {
+        await safeEditMessageText(bot, I18N_TEXTS.chooseRegionPrompt[lang], {
           chat_id: chatId,
           message_id: msg.message_id,
-          parse_mode: 'Markdown',
           ...getKyrgyzstanRegionsKeyboard(lang),
         });
         return;
@@ -383,21 +405,23 @@ export function initCommands(): void {
         const reg = KYRGYZ_REGIONS.find((r) => r.id === regId);
         if (!reg) return;
 
-        // Бишкек же Ош шаарлары (республикалык маанидеги) — дароо сактайбыз
+        // Бишкек или Ош (республиканские города с 1 местом)
         if (reg.places.length === 1) {
           const place = reg.places[0];
           const displayName = place.name[lang] || place.name.ru;
           setUserLocation(userId, displayName, place.latitude, place.longitude, place.timezone);
-          await bot.sendMessage(
+
+          await safeSendMessage(
+            bot,
             chatId,
             I18N_TEXTS.locationSaved[lang](displayName),
-            { parse_mode: 'Markdown', ...getMainReplyKeyboard(lang) }
+            { ...getMainReplyKeyboard(lang) }
           );
           const updated = getUser(userId)!;
           return sendUserWeather(chatId, updated);
         }
 
-        // Облус болсо — ошол облустун шаар/райондорунун тизмесин ачабыз
+        // Область — открываем выбор городов/районов
         const regName = reg.name[lang] || reg.name.ru;
         const prompt =
           lang === 'ky'
@@ -406,12 +430,12 @@ export function initCommands(): void {
             ? 'Select city or district:'
             : 'Выберите город или район:';
 
-        await bot.editMessageText(
-          `${reg.emoji} **${regName}**\n${prompt}`,
+        await safeEditMessageText(
+          bot,
+          `${reg.emoji} <b>${escapeHtml(regName)}</b>\n${prompt}`,
           {
             chat_id: chatId,
             message_id: msg.message_id,
-            parse_mode: 'Markdown',
             ...getKyrgyzstanPlacesKeyboard(reg, lang),
           }
         );
@@ -428,36 +452,38 @@ export function initCommands(): void {
         const fullName = `${placeName} (${regName})`;
         setUserLocation(userId, fullName, place.latitude, place.longitude, place.timezone);
 
-        await bot.sendMessage(
+        await safeSendMessage(
+          bot,
           chatId,
           I18N_TEXTS.locationSaved[lang](fullName),
-          { parse_mode: 'Markdown', ...getMainReplyKeyboard(lang) }
+          { ...getMainReplyKeyboard(lang) }
         );
         const updated = getUser(userId)!;
         return sendUserWeather(chatId, updated);
       }
 
-      // 3. Меню погоды
-      if (data === 'weather_refresh') {
+      // 3. Навигация по экранам погоды (Главная, Детали, По часам, 3 дня)
+      if (data === 'weather_main' || data === 'weather_refresh') {
         if (!user || !user.latitude) return askForLocation(chatId, lang);
         return sendUserWeather(chatId, user, msg.message_id);
       }
 
+      if (data === 'weather_details') {
+        if (!user || !user.latitude) return askForLocation(chatId, lang);
+        return sendWeatherDetails(chatId, user, msg.message_id);
+      }
+
+      if (data === 'weather_hourly') {
+        if (!user || !user.latitude) return askForLocation(chatId, lang);
+        return sendHourlyForecast(chatId, user, msg.message_id);
+      }
+
       if (data === 'weather_3d') {
         if (!user || !user.latitude) return askForLocation(chatId, lang);
-        return sendForecast(chatId, user);
+        return sendForecast(chatId, user, msg.message_id);
       }
 
-      if (data === 'advice_umbrella') {
-        if (!user || !user.latitude) return askForLocation(chatId, lang);
-        return sendUmbrellaDetails(chatId, user);
-      }
-
-      if (data === 'advice_clothing') {
-        if (!user || !user.latitude) return askForLocation(chatId, lang);
-        return sendClothingDetails(chatId, user);
-      }
-
+      // 4. Меню настроек
       if (data === 'menu_settings') {
         if (!user) return;
         return sendSettingsMenu(chatId, user, msg.message_id);
@@ -485,22 +511,26 @@ export function initCommands(): void {
       }
 
       if (data === 'choose_time') {
-        await bot.editMessageText(I18N_TEXTS.chooseTimeTitle[lang], {
+        await safeEditMessageText(bot, I18N_TEXTS.chooseTimeTitle[lang], {
           chat_id: chatId,
           message_id: msg.message_id,
-          parse_mode: 'Markdown',
           ...getTimeChoiceKeyboard(lang),
         });
         return;
       }
 
+      // Исправление бага с обрезанием минут: 'set_time:08:00' -> cleanTime = '08:00'
       if (data.startsWith('set_time:')) {
-        const time = data.split(':')[1];
-        updateUserSettings(userId, { notify_time: time, notify_enabled: 1 });
+        const rawTime = data.replace(/^set_time:/, '').trim();
+        let cleanTime = rawTime;
+        if (/^\d{1,2}$/.test(cleanTime)) {
+          cleanTime = `${cleanTime.padStart(2, '0')}:00`;
+        }
+
+        updateUserSettings(userId, { notify_time: cleanTime, notify_enabled: 1 });
         const updated = getUser(userId)!;
-        await bot.sendMessage(chatId, I18N_TEXTS.timeSetSuccess[lang](time), {
-          parse_mode: 'Markdown',
-        });
+
+        await safeSendMessage(chatId ? bot : bot, chatId, I18N_TEXTS.timeSetSuccess[lang](cleanTime));
         return sendSettingsMenu(chatId, updated);
       }
 
@@ -511,13 +541,11 @@ export function initCommands(): void {
         const name = parts.slice(3).join(':');
 
         setUserLocation(userId, name, lat, lon);
-        await bot.sendMessage(
+        await safeSendMessage(
+          bot,
           chatId,
           I18N_TEXTS.locationSaved[lang](name),
-          {
-            parse_mode: 'Markdown',
-            ...getMainReplyKeyboard(lang),
-          }
+          { ...getMainReplyKeyboard(lang) }
         );
 
         const updated = getUser(userId)!;
@@ -528,15 +556,14 @@ export function initCommands(): void {
       if (data === 'request_reset') {
         const confirmPrompt =
           lang === 'ky'
-            ? '⚠️ **Чын эле бардык сакталган дайындарды жана аймакты тазалагыңыз келеби?**'
+            ? '⚠️ <b>Чын эле бардык сакталган дайындарды жана аймакты тазалагыңыз келеби?</b>'
             : lang === 'en'
-            ? '⚠️ **Are you sure you want to clear your saved data and location?**'
-            : '⚠️ **Вы действительно хотите удалить все сохранённые данные и регион?**';
+            ? '⚠️ <b>Are you sure you want to clear your saved data and location?</b>'
+            : '⚠️ <b>Вы действительно хотите удалить все сохранённые данные и регион?</b>';
 
-        await bot.editMessageText(confirmPrompt, {
+        await safeEditMessageText(bot, confirmPrompt, {
           chat_id: chatId,
           message_id: msg.message_id,
-          parse_mode: 'Markdown',
           ...getResetConfirmationKeyboard(lang),
         });
         return;
@@ -546,24 +573,26 @@ export function initCommands(): void {
       if (data === 'confirm_reset') {
         deleteUser(userId);
         const resetNotice =
-          `🗑️ **Память очищена / Дайындар тазаланды / Memory cleared!**\n\n` +
+          `🗑️ <b>Память очищена / Дайындар тазаланды / Memory cleared!</b>\n\n` +
           `🇰🇬 Сиздин бардык орнотууларыңыз өчүрүлдү.\n` +
           `🇷🇺 Все ваши сохранённые данные и регион сброшены.\n` +
           `🇬🇧 All your saved settings and location have been reset.\n\n` +
           I18N_TEXTS.welcomeMultilingual(query.from.first_name || 'Friend');
 
-        await bot.sendMessage(chatId, resetNotice, {
-          parse_mode: 'Markdown',
+        await safeSendMessage(bot, chatId, resetNotice, {
           ...getLanguageSelectionKeyboard(),
         });
         return;
       }
     } catch (err: any) {
-      console.error('Ошибка в callback query:', err);
+      console.error('❌ [callback_query] Ошибка:', err);
     }
   });
 }
 
+/**
+ * Отправка главной компактной карточки погоды
+ */
 async function sendUserWeather(chatId: number, user: UserRecord, editMessageId?: number): Promise<void> {
   const lang = user.language || 'ru';
   if (!user.city_name || !user.latitude || !user.longitude) {
@@ -575,15 +604,13 @@ async function sendUserWeather(chatId: number, user: UserRecord, editMessageId?:
     const text = formatWeatherMessage(weather, lang);
 
     if (editMessageId) {
-      await bot.editMessageText(text, {
+      await safeEditMessageText(bot, text, {
         chat_id: chatId,
         message_id: editMessageId,
-        parse_mode: 'Markdown',
         ...getWeatherInlineKeyboard(lang),
       });
     } else {
-      await bot.sendMessage(chatId, text, {
-        parse_mode: 'Markdown',
+      await safeSendMessage(bot, chatId, text, {
         ...getWeatherInlineKeyboard(lang),
       });
     }
@@ -591,150 +618,151 @@ async function sendUserWeather(chatId: number, user: UserRecord, editMessageId?:
     console.error('Ошибка получения погоды:', err);
     const errText =
       lang === 'ky'
-        ? '⚠️ Аба ырайы кызматы менен байланышуу мүмкүн болгон жок. Бир мүнөттөн кийин кайталап көрүңүз.'
+        ? '⚠️ Метеокызмат менен байланышуу мүмкүн болгон жок. Сураныч, бир аздан кийин кайталап көрүңүз.'
         : lang === 'en'
-        ? '⚠️ Could not connect to weather service. Please try again in a minute.'
-        : '⚠️ Не удалось связаться с метеосервисом. Пожалуйста, попробуйте через минуту.';
-    await bot.sendMessage(chatId, errText);
+        ? '⚠️ Could not connect to weather service. Please try again in a moment.'
+        : '⚠️ Метеослужба временно недоступна. Пожалуйста, попробуйте повторить запрос через минуту.';
+    await safeSendMessage(bot, chatId, errText);
   }
 }
 
-async function sendForecast(chatId: number, user: UserRecord): Promise<void> {
+/**
+ * Отправка экрана подробных метеопоказателей
+ */
+async function sendWeatherDetails(chatId: number, user: UserRecord, editMessageId?: number): Promise<void> {
+  const lang = user.language || 'ru';
+  try {
+    const weather = await fetchWeatherData(user.city_name!, user.latitude!, user.longitude!, user.timezone, lang);
+    const text = formatWeatherDetailsMessage(weather, lang);
+
+    if (editMessageId) {
+      await safeEditMessageText(bot, text, {
+        chat_id: chatId,
+        message_id: editMessageId,
+        ...getWeatherSubScreenKeyboard(lang),
+      });
+    } else {
+      await safeSendMessage(bot, chatId, text, {
+        ...getWeatherSubScreenKeyboard(lang),
+      });
+    }
+  } catch (err: any) {
+    console.error('Ошибка деталей погоды:', err);
+  }
+}
+
+/**
+ * Отправка почасового прогноза
+ */
+async function sendHourlyForecast(chatId: number, user: UserRecord, editMessageId?: number): Promise<void> {
+  const lang = user.language || 'ru';
+  try {
+    const weather = await fetchWeatherData(user.city_name!, user.latitude!, user.longitude!, user.timezone, lang);
+    const text = formatHourlyForecastMessage(weather, lang);
+
+    if (editMessageId) {
+      await safeEditMessageText(bot, text, {
+        chat_id: chatId,
+        message_id: editMessageId,
+        ...getWeatherSubScreenKeyboard(lang),
+      });
+    } else {
+      await safeSendMessage(bot, chatId, text, {
+        ...getWeatherSubScreenKeyboard(lang),
+      });
+    }
+  } catch (err: any) {
+    console.error('Ошибка почасового прогноза:', err);
+  }
+}
+
+/**
+ * Отправка 3-дневного прогноза
+ */
+async function sendForecast(chatId: number, user: UserRecord, editMessageId?: number): Promise<void> {
   const lang = user.language || 'ru';
   try {
     const weather = await fetchWeatherData(user.city_name!, user.latitude!, user.longitude!, user.timezone, lang);
     const text = formatForecast3Days(weather, lang);
-    await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-  } catch (err: any) {
-    await bot.sendMessage(chatId, '⚠️ Прогноз алуу мүмкүн болгон жок.');
-  }
-}
 
-async function sendUmbrellaDetails(chatId: number, user: UserRecord): Promise<void> {
-  const lang = user.language || 'ru';
-  try {
-    const weather = await fetchWeatherData(user.city_name!, user.latitude!, user.longitude!, user.timezone, lang);
-    const advice = generateAdvice(weather, lang);
-    const cur = weather.current;
-    const isKy = lang === 'ky';
-    const isEn = lang === 'en';
-
-    const curStatusLabel = isKy ? 'Учурдагы абал' : isEn ? 'Current status' : 'Текущая обстановка';
-    const precipNowLabel = isKy ? 'Жаан-чачын азыр' : isEn ? 'Precipitation right now' : 'Осадки сейчас';
-    const humidityLabel = isKy ? 'Нымдуулук' : isEn ? 'Humidity' : 'Влажность';
-    const verdictLabel = isKy ? 'Корутунду' : isEn ? 'Verdict' : 'Вердикт';
-    const timelineLabel = isKy ? 'Саат сайын жаан-чачын ыктымалдуулугу' : isEn ? 'Hourly rain probability' : 'Вероятность осадков по часам';
-
-    let hourlyRainTimeline = '';
-    if (weather.hourlyNext12h.length) {
-      hourlyRainTimeline =
-        `\n⏱️ **${timelineLabel}:**\n` +
-        weather.hourlyNext12h
-          .slice(0, 8)
-          .map((h) => {
-            const bar = '█'.repeat(Math.round(h.precipitationProbability / 20)) + '░'.repeat(5 - Math.round(h.precipitationProbability / 20));
-            return `• \`${h.time}\` [${bar}] **${h.precipitationProbability}%** ${h.weatherEmoji} (${h.precipitation} мм)`;
-          })
-          .join('\n');
+    if (editMessageId) {
+      await safeEditMessageText(bot, text, {
+        chat_id: chatId,
+        message_id: editMessageId,
+        ...getWeatherSubScreenKeyboard(lang),
+      });
+    } else {
+      await safeSendMessage(bot, chatId, text, {
+        ...getWeatherSubScreenKeyboard(lang),
+      });
     }
-
-    const title = I18N_TEXTS.umbrellaTitle[lang](weather.cityName);
-    const message =
-      `${title}\n\n` +
-      `${curStatusLabel}: ${cur.weatherEmoji} **${cur.weatherDescription}**\n` +
-      `${precipNowLabel}: **${cur.precipitation} мм**\n` +
-      `${humidityLabel}: **${cur.humidity}%**\n\n` +
-      `📢 **${verdictLabel}:**\n` +
-      `${advice.umbrella}\n` +
-      hourlyRainTimeline;
-
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   } catch (err: any) {
-    await bot.sendMessage(chatId, '⚠️ Жаан-чачын маалыматын эсептөө мүмкүн болгон жок.');
+    console.error('Ошибка прогноза на 3 дня:', err);
   }
 }
 
-async function sendClothingDetails(chatId: number, user: UserRecord): Promise<void> {
-  const lang = user.language || 'ru';
-  try {
-    const weather = await fetchWeatherData(user.city_name!, user.latitude!, user.longitude!, user.timezone, lang);
-    const advice = generateAdvice(weather, lang);
-    const cur = weather.current;
-    const isKy = lang === 'ky';
-    const isEn = lang === 'en';
-
-    const title = I18N_TEXTS.clothingTitle[lang](weather.cityName);
-    const actualTemp = isKy ? 'Иш жүзүндөгү температура' : isEn ? 'Actual temperature' : 'Фактическая температура';
-    const feelsLike = isKy ? 'Сезилет' : isEn ? 'Feels like' : 'Ощущается как';
-    const wind = isKy ? 'Шамал' : isEn ? 'Wind' : 'Ветер';
-    const gusts = isKy ? 'күчөшү' : isEn ? 'gusts up to' : 'порывы до';
-    const clothingHead = isKy ? '👗 Кийим кеңеши' : isEn ? '👗 Clothing recommendation' : '👗 Рекомендация по одежде';
-    const windHead = isKy ? '💨 Шамал таасири' : isEn ? '💨 Wind factor' : '💨 Фактор ветра';
-
-    const message =
-      `${title}\n\n` +
-      `${actualTemp}: **${cur.temperature > 0 ? '+' : ''}${cur.temperature}°C**\n` +
-      `${feelsLike}: **${cur.apparentTemperature > 0 ? '+' : ''}${cur.apparentTemperature}°C**\n` +
-      `${wind}: **${cur.windSpeed} м/с** (${gusts} ${cur.windGusts} м/с)\n\n` +
-      `**${clothingHead}:**\n` +
-      `${advice.clothing}\n\n` +
-      `**${windHead}:**\n` +
-      `${advice.wind}`;
-
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-  } catch (err: any) {
-    await bot.sendMessage(chatId, '⚠️ Кийим кеңешин эсептөө мүмкүн болгон жок.');
-  }
-}
-
+/**
+ * Отправка меню настроек
+ */
 async function sendSettingsMenu(chatId: number, user: UserRecord, editMessageId?: number): Promise<void> {
   const lang = user.language || 'ru';
   const isKy = lang === 'ky';
   const isEn = lang === 'en';
 
+  let cleanTime = user.notify_time || '07:30';
+  if (cleanTime.length <= 2) {
+    cleanTime = `${cleanTime.padStart(2, '0')}:00`;
+  }
+
+  const morningVal = user.notify_enabled ? `${I18N_TEXTS.enabled[lang]} (${cleanTime})` : I18N_TEXTS.disabled[lang];
+  const rainVal = user.alert_rain ? I18N_TEXTS.enabled[lang] : I18N_TEXTS.disabled[lang];
+  const stormVal = user.alert_storm ? I18N_TEXTS.enabled[lang] : I18N_TEXTS.disabled[lang];
+  const langVal = lang === 'ky' ? 'Кыргызча 🇰🇬' : lang === 'en' ? 'English 🇬🇧' : 'Русский 🇷🇺';
+
   const text =
     `${I18N_TEXTS.settingsTitle[lang]}\n\n` +
-    `${I18N_TEXTS.settingsCurrentCity[lang]} **${user.city_name || (isKy ? 'Тандалган эмес' : isEn ? 'Not set' : 'Не задан')}**\n` +
-    `${I18N_TEXTS.settingsMorning[lang]} **${user.notify_enabled ? `${I18N_TEXTS.enabled[lang]} (${user.notify_time})` : I18N_TEXTS.disabled[lang]}**\n` +
-    `${I18N_TEXTS.settingsRain[lang]} **${user.alert_rain ? I18N_TEXTS.enabled[lang] : I18N_TEXTS.disabled[lang]}**\n` +
-    `${I18N_TEXTS.settingsStorm[lang]} **${user.alert_storm ? I18N_TEXTS.enabled[lang] : I18N_TEXTS.disabled[lang]}**\n` +
-    `${I18N_TEXTS.settingsLanguage[lang]} **${lang === 'ky' ? 'Кыргызча 🇰🇬' : lang === 'en' ? 'English 🇬🇧' : 'Русский 🇷🇺'}**\n\n` +
-    (isKy ? 'Параметрлерди алмаштыруу үчүн төмөнкү баскычтарды басыңыз:' : isEn ? 'Tap buttons below to change parameters:' : 'Нажимайте кнопки ниже, чтобы переключить параметры:');
+    `${I18N_TEXTS.settingsCurrentCity[lang]} <b>${escapeHtml(user.city_name || (isKy ? 'Тандалган эмес' : isEn ? 'Not set' : 'Не задан'))}</b>\n` +
+    `${I18N_TEXTS.settingsMorning[lang]} <b>${morningVal}</b>\n` +
+    `${I18N_TEXTS.settingsTime[lang]} <b>${cleanTime} (Asia/Bishkek)</b>\n` +
+    `${I18N_TEXTS.settingsRain[lang]} <b>${rainVal}</b>\n` +
+    `${I18N_TEXTS.settingsStorm[lang]} <b>${stormVal}</b>\n` +
+    `${I18N_TEXTS.settingsLanguage[lang]} <b>${langVal}</b>\n\n` +
+    (isKy ? 'Параметрди алмаштыруу үчүн төмөнкү баскычты басыңыз:' : isEn ? 'Tap below to modify parameters:' : 'Нажмите кнопку ниже, чтобы изменить параметр:');
 
   if (editMessageId) {
-    await bot.editMessageText(text, {
+    await safeEditMessageText(bot, text, {
       chat_id: chatId,
       message_id: editMessageId,
-      parse_mode: 'Markdown',
       ...getSettingsInlineKeyboard(user),
     });
   } else {
-    await bot.sendMessage(chatId, text, {
-      parse_mode: 'Markdown',
+    await safeSendMessage(bot, chatId, text, {
       ...getSettingsInlineKeyboard(user),
     });
   }
 }
 
 async function askForLocation(chatId: number, lang: Language = 'ru'): Promise<void> {
-  await bot.sendMessage(chatId, I18N_TEXTS.chooseRegionPrompt[lang], {
-    parse_mode: 'Markdown',
+  await safeSendMessage(bot, chatId, I18N_TEXTS.chooseRegionPrompt[lang], {
     ...getKyrgyzstanRegionsKeyboard(lang),
   });
 }
 
+/**
+ * Обработка поиска города или села Кыргызстана с понятными сообщениями об ошибках
+ */
 async function handleCitySearch(chatId: number, userId: number, query: string): Promise<void> {
   const user = getUser(userId);
   const lang = user?.language || 'ru';
 
   try {
-    const results = await searchCities(query);
+    const results = await searchCities(query, lang);
     if (!results.length) {
-      await bot.sendMessage(
+      await safeSendMessage(
+        bot,
         chatId,
         I18N_TEXTS.cityNotFound[lang](query),
         {
-          parse_mode: 'Markdown',
           ...getKyrgyzstanRegionsKeyboard(lang),
         }
       );
@@ -746,10 +774,11 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
       const fullName = city.admin1 ? `${city.name} (${city.admin1})` : city.name;
       setUserLocation(userId, fullName, city.latitude, city.longitude, city.timezone);
 
-      await bot.sendMessage(
+      await safeSendMessage(
+        bot,
         chatId,
         I18N_TEXTS.locationSaved[lang](fullName),
-        { parse_mode: 'Markdown', ...getMainReplyKeyboard(lang) }
+        { ...getMainReplyKeyboard(lang) }
       );
 
       const updated = getUser(userId)!;
@@ -758,10 +787,10 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
 
     const choosePrompt =
       lang === 'ky'
-        ? `🔍 «**${query}**» боюнча Кыргызстанда бир нече айыл/район табылды. Тандаңыз:`
+        ? `🔍 «<b>${escapeHtml(query)}</b>» боюнча Кыргызстанда бир нече аймак табылды. Тандаңыз:`
         : lang === 'en'
-        ? `🔍 Multiple matches found in Kyrgyzstan for «**${query}**. Select yours:`
-        : `🔍 Найдено несколько совпадений в Кыргызстане для «**${query}**». Выберите ваш район:`;
+        ? `🔍 Multiple matches found in Kyrgyzstan for «<b>${escapeHtml(query)}</b>». Select yours:`
+        : `🔍 Найдено несколько совпадений в Кыргызстане для «<b>${escapeHtml(query)}</b>». Выберите ваш район:`;
 
     const buttons = results.slice(0, 6).map((c) => {
       const label = `${c.name}${c.admin1 ? `, ${c.admin1}` : ''} (KG)`;
@@ -774,12 +803,20 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
       ];
     });
 
-    await bot.sendMessage(chatId, choosePrompt, {
-      parse_mode: 'Markdown',
+    await safeSendMessage(bot, chatId, choosePrompt, {
       reply_markup: { inline_keyboard: buttons },
     });
   } catch (err: any) {
     console.error('Ошибка поиска города:', err);
-    await bot.sendMessage(chatId, '⚠️ Ошибка при поиске города.');
+    const errText =
+      lang === 'ky'
+        ? '⚠️ Аймак издөө кызматы убактылуу иштебей жатат. Төмөнкү тизмеден облусту тандаңыз:'
+        : lang === 'en'
+        ? '⚠️ Search service is temporarily unavailable. Please select your region below:'
+        : '⚠️ Служба поиска временно недоступна. Пожалуйста, выберите область из списка ниже:';
+
+    await safeSendMessage(bot, chatId, errText, {
+      ...getKyrgyzstanRegionsKeyboard(lang),
+    });
   }
 }

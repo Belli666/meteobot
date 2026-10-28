@@ -66,6 +66,17 @@ function initSchema(db: DatabaseSync): void {
   } catch {
     // Игнорируем ошибку, если колонка уже существует
   }
+
+  // Миграция/исправление формата времени утренней сводки (например '08' -> '08:00')
+  try {
+    db.exec(`
+      UPDATE users
+      SET notify_time = printf('%02d:00', CAST(notify_time AS INTEGER))
+      WHERE notify_time IS NOT NULL AND length(notify_time) <= 2;
+    `);
+  } catch {
+    // Игнорируем
+  }
 }
 
 export function getUser(telegramId: number): UserRecord | null {

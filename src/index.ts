@@ -122,6 +122,15 @@ function shutdown(signal: string): void {
   }
 }
 
+// Защита процесса от падений при непредвиденных ошибках и сетевых сбоях
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ [MeteoBot] Неперехваченный отказ промиса:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ [MeteoBot] Неперехваченное исключение (процесс продолжает работу):', err);
+});
+
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 

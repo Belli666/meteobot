@@ -67,23 +67,33 @@ export interface WeatherData {
   latitude: number;
   longitude: number;
   timezone: string;
+  fetchTimestamp: string;
   current: CurrentWeather;
   hourlyNext12h: HourlyForecastItem[];
   daily7Days: DailyForecastItem[];
   providerSource: string;
 }
 
-export function getWeatherDescription(code: number, lang: Language = 'ru'): { description: string; emoji: string } {
+export function getWeatherDescription(
+  code: number,
+  lang: Language = 'ru',
+  isDay: boolean = true
+): { description: string; emoji: string } {
   const normalized = normalizeLang(lang);
   const table = WEATHER_CODE_TRANSLATIONS[normalized] || WEATHER_CODE_TRANSLATIONS.ru;
-  if (table[code]) {
-    return table[code];
+  const meta = table[code] || {
+    description: normalized === 'ky' ? 'Булуттуу' : normalized === 'en' ? 'Cloudy' : 'Облачно',
+    emoji: isDay ? '🌤️' : '☁️',
+  };
+
+  let emoji = meta.emoji;
+  if (!isDay) {
+    if (code === 0) emoji = '🌙';
+    else if (code === 1) emoji = '🌙☁️';
+    else if (code === 2) emoji = '☁️';
   }
-  return normalized === 'ky'
-    ? { description: 'Булуттуу', emoji: '🌤️' }
-    : normalized === 'en'
-    ? { description: 'Cloudy', emoji: '🌤️' }
-    : { description: 'Облачно', emoji: '🌤️' };
+
+  return { description: meta.description, emoji };
 }
 
 /**
@@ -194,6 +204,7 @@ export async function fetchWeatherData(
       'weather_code',
       'apparent_temperature',
       'uv_index',
+      'is_day',
     ].join(','),
     daily: [
       'weather_code',
@@ -220,7 +231,8 @@ export async function fetchWeatherData(
 
   const data = (await res.json()) as any;
   const cur = data.current;
-  const curMeta = getWeatherDescription(cur.weather_code, lang);
+  const isCurDay = Boolean(cur.is_day);
+  const curMeta = getWeatherDescription(cur.weather_code, lang, isCurDay);
   const pressureMmHg = Math.round(cur.surface_pressure * 0.750062);
 
   const current: CurrentWeather = {
@@ -235,7 +247,7 @@ export async function fetchWeatherData(
     weatherCode: cur.weather_code,
     weatherDescription: curMeta.description,
     weatherEmoji: curMeta.emoji,
-    isDay: Boolean(cur.is_day),
+    isDay: isCurDay,
     time: cur.time,
   };
 
@@ -247,7 +259,8 @@ export async function fetchWeatherData(
     if (startIndex === -1) startIndex = 0;
 
     for (let i = startIndex; i < Math.min(startIndex + 12, hourly.time.length); i++) {
-      const hMeta = getWeatherDescription(hourly.weather_code[i], lang);
+      const isDayHour = hourly.is_day ? Boolean(hourly.is_day[i]) : true;
+      const hMeta = getWeatherDescription(hourly.weather_code[i], lang, isDayHour);
       hourlyNext12h.push({
         time: hourly.time[i].slice(11, 16),
         temperature: Math.round(hourly.temperature_2m[i]),
@@ -265,7 +278,7 @@ export async function fetchWeatherData(
   const daily = data.daily;
   if (daily && daily.time) {
     for (let i = 0; i < daily.time.length; i++) {
-      const dMeta = getWeatherDescription(daily.weather_code[i], lang);
+      const dMeta = getWeatherDescription(daily.weather_code[i], lang, true);
       daily7Days.push({
         date: daily.time[i],
         tempMin: Math.round(daily.temperature_2m_min[i]),
@@ -285,11 +298,25 @@ export async function fetchWeatherData(
     }
   }
 
+  let fetchTimestamp = '';
+  try {
+    fetchTimestamp = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: data.timezone || timezone || DEFAULT_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date());
+  } catch {
+    const d = new Date();
+    fetchTimestamp = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
   return {
     cityName,
     latitude,
     longitude,
     timezone: data.timezone || timezone,
+    fetchTimestamp,
     current,
     hourlyNext12h,
     daily7Days,

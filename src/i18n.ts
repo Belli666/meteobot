@@ -1,3 +1,5 @@
+import { escapeHtml } from './telegramSafe';
+
 export type Language = 'ky' | 'ru' | 'en';
 
 export const SUPPORTED_LANGUAGES: Language[] = ['ky', 'ru', 'en'];
@@ -92,15 +94,6 @@ export const WEATHER_CODE_TRANSLATIONS: Record<Language, Record<number, WeatherC
     65: { description: 'Heavy rain', emoji: '🌧️' },
     66: { description: 'Freezing rain', emoji: '🌨️' },
     67: { description: 'Heavy freezing rain', emoji: '🌨️' },
-    71: { description: 'Slight snow fall', emoji: '🌨️' },
-    73: { description: 'Moderate snow fall', emoji: '❄️' },
-    75: { description: 'Heavy snow fall', emoji: '❄️' },
-    77: { description: 'Snow grains', emoji: '❄️' },
-    80: { description: 'Slight rain showers', emoji: '🌦️' },
-    81: { description: 'Moderate rain showers', emoji: '🌧️' },
-    82: { description: 'Violent rain showers', emoji: '⛈️' },
-    85: { description: 'Slight snow showers', emoji: '🌨️' },
-    86: { description: 'Heavy snow showers', emoji: '🌨️' },
     95: { description: 'Thunderstorm', emoji: '⚡' },
     96: { description: 'Thunderstorm with hail', emoji: '⛈️' },
     99: { description: 'Severe thunderstorm with hail', emoji: '⛈️' },
@@ -110,60 +103,60 @@ export const WEATHER_CODE_TRANSLATIONS: Record<Language, Record<number, WeatherC
 export const I18N_TEXTS = {
   // Трехъязычное стартовое приветствие
   welcomeMultilingual: (firstName: string) =>
-    `👋 **Саламатсызбы / Здравствуйте / Hello, ${firstName}!**\n\n` +
-    `🇰🇬 **Кыргызча:**\n` +
+    `👋 <b>Саламатсызбы / Здравствуйте / Hello, ${escapeHtml(firstName)}!</b>\n\n` +
+    `🇰🇬 <b>Кыргызча:</b>\n` +
     `Кыргызстандын метеорологиялык ботуна кош келиңиз! Күнүмдүк аба ырайын, кол чатыр алуу кеңешин жана эртең мененки маалыматты алуу үчүн тилди тандаңыз.\n\n` +
-    `🇷🇺 **Русский:**\n` +
+    `🇷🇺 <b>Русский:</b>\n` +
     `Добро пожаловать в метео-бот по Кыргызстану! Чтобы получать точный прогноз, советы про зонт и утренние сводки, выберите язык.\n\n` +
-    `🇬🇧 **English:**\n` +
+    `🇬🇧 <b>English:</b>\n` +
     `Welcome to the Kyrgyzstan Weather Bot! To receive daily forecasts, umbrella alerts, and morning briefings, please select your language:`,
 
   languageSelectedMsg: {
-    ky: '✅ **Кыргыз тили тандалды!** 🇰🇬',
-    ru: '✅ **Выбран русский язык!** 🇷🇺',
-    en: '✅ **English language selected!** 🇬🇧',
+    ky: '✅ <b>Кыргыз тили тандалды!</b> 🇰🇬',
+    ru: '✅ <b>Выбран русский язык!</b> 🇷🇺',
+    en: '✅ <b>English language selected!</b> 🇬🇧',
   },
 
   chooseRegionPrompt: {
-    ky: '📍 **Кыргызстандын кайсы облусунда же шаарында турасыз?**\nТөмөндөгү баскычтар аркылуу өз аймагыңызды тандаңыз, геопозицияңызды жөнөтүңүз же шаар/айылдын атын жазыңыз:',
-    ru: '📍 **В какой области или городе Кыргызстана вы находитесь?**\nВыберите область кнопками ниже, отправьте геопозицию или напишите название города/села в чат:',
-    en: '📍 **Which region or city in Kyrgyzstan are you located in?**\nSelect your region below, send your GPS location, or type your city/village name:',
+    ky: '📍 <b>Кыргызстандын кайсы облусунда же шаарында турасыз?</b>\nТөмөндөгү баскычтар аркылуу өз аймагыңызды тандаңыз, геопозицияңызды жөнөтүңүз же шаар/айылдын атын жазыңыз:',
+    ru: '📍 <b>В какой области или городе Кыргызстана вы находитесь?</b>\nВыберите область кнопками ниже, отправьте геопозицию или напишите название города/села в чат:',
+    en: '📍 <b>Which region or city in Kyrgyzstan are you located in?</b>\nSelect your region below, send your GPS location, or type your city/village name:',
   },
 
   locationSaved: {
     ky: (city: string) =>
-      `✅ **Аймак сакталды:** ${city}!\nЭми аба ырайы, кол чатыр боюнча кеңештер жана эртең мененки маалыматтар ушул аймакка негизделет.`,
+      `✅ <b>Аймак сакталды:</b> ${escapeHtml(city)}!\nЭми аба ырайы жана эртең мененки маалыматтар ушул аймакка негизделет.`,
     ru: (city: string) =>
-      `✅ **Регион сохранён:** ${city}!\nТеперь прогноз погоды, советы про зонт и утренние сводки настроены под этот регион.`,
+      `✅ <b>Регион сохранён:</b> ${escapeHtml(city)}!\nТеперь прогноз погоды, советы про зонт и утренние сводки настроены под этот регион.`,
     en: (city: string) =>
-      `✅ **Location saved:** ${city}!\nNow all weather reports, umbrella advice, and daily briefings are set for this region.`,
+      `✅ <b>Location saved:</b> ${escapeHtml(city)}!\nNow all weather reports, umbrella advice, and daily briefings are set for this region.`,
   },
 
   buttons: {
     myWeather: {
-      ky: '🌡️ Менин аба ырайым',
+      ky: '🌡️ Аба ырайы',
       ru: '🌡️ Моя погода',
       en: '🌡️ My Weather',
     },
-    umbrella: {
-      ky: '☂️ Кол чатыр',
-      ru: '☂️ Зонт',
-      en: '☂️ Umbrella',
-    },
-    clothing: {
-      ky: '🧥 Эмне кийүү керек?',
-      ru: '🧥 Что надеть',
-      en: '🧥 What to wear',
-    },
     forecast3d: {
-      ky: '📅 3 күндүк божомол',
-      ru: '📅 Прогноз на 3 дня',
+      ky: '📅 3 күндүк',
+      ru: '📅 На 3 дня',
       en: '📅 3-Day Forecast',
     },
+    hourly: {
+      ky: '⏱️ Саат сайын',
+      ru: '⏱️ По часам',
+      en: '⏱️ Hourly',
+    },
+    details: {
+      ky: '📊 Толук маалымат',
+      ru: '📊 Подробнее',
+      en: '📊 Details',
+    },
     selectRegion: {
-      ky: '🗺️ Облусту тандоо',
-      ru: '🗺️ Выбрать область',
-      en: '🗺️ Select Region',
+      ky: '🗺️ Башка аймак',
+      ru: '🗺️ Выбрать город',
+      en: '🗺️ Change City',
     },
     settings: {
       ky: '⚙️ Ырастоолор',
@@ -172,8 +165,8 @@ export const I18N_TEXTS = {
     },
     sendLocation: {
       ky: '📍 Жайгашкан жеримди жөнөтүү',
-      ru: '📍 Отправить мою геопозицию',
-      en: '📍 Send my location',
+      ru: '📍 Моя геопозиция',
+      en: '📍 Send GPS location',
     },
     refresh: {
       ky: '🔄 Жаңылоо',
@@ -186,9 +179,14 @@ export const I18N_TEXTS = {
       en: '🌐 Change Language',
     },
     back: {
-      ky: '⬅️ Артка',
+      ky: '⬅️ Артview',
       ru: '⬅️ Назад',
       en: '⬅️ Back',
+    },
+    backToWeather: {
+      ky: '⬅️ Аба ырайына кайтуу',
+      ru: '⬅️ Назад к погоде',
+      en: '⬅️ Back to weather',
     },
   },
 
@@ -204,38 +202,36 @@ export const I18N_TEXTS = {
     sunrise: { ky: 'Күн чыгышы', ru: 'Восход', en: 'Sunrise' },
     sunset: { ky: 'Күн батышы', ru: 'Закат', en: 'Sunset' },
     hourlyTitle: {
-      ky: '📊 **Саат сайын божомол:**',
-      ru: '📊 **Почасовой прогноз:**',
-      en: '📊 **Hourly forecast:**',
+      ky: 'Саат сайын божомол',
+      ru: 'Почасовой прогноз',
+      en: 'Hourly Forecast',
     },
-    adviceTitle: {
-      ky: '💡 **Метеорологдун кеңештери:**',
-      ru: '💡 **Советы метеоролога:**',
-      en: '💡 **Meteorologist Advice:**',
+    detailsTitle: {
+      ky: 'Толук көрсөткүчтөр',
+      ru: 'Подробные показатели',
+      en: 'Detailed Weather Metrics',
     },
-    source: {
-      ky: '📡 *Маалымат: Open-Meteo жана Кыргызгидромет (meteo.kg)*',
-      ru: '📡 *Данные: Open-Meteo и Кыргызгидромет (meteo.kg)*',
-      en: '📡 *Data: Open-Meteo & Kyrgyzhydromet (meteo.kg)*',
+    updatedAt: {
+      ky: 'Жаңыртылды',
+      ru: 'Обновлено в',
+      en: 'Updated at',
     },
-  },
-
-  umbrellaTitle: {
-    ky: (city: string) => `☂️ **${city} үчүн жаан-чачын жана кол чатыр анализи**`,
-    ru: (city: string) => `☂️ **Анализ осадков и зонта для ${city}**`,
-    en: (city: string) => `☂️ **Precipitation & Umbrella Analysis for ${city}**`,
-  },
-
-  clothingTitle: {
-    ky: (city: string) => `🧥 **${city} үчүн кийим кеңеши**`,
-    ru: (city: string) => `🧥 **Гардеробный совет для ${city}**`,
-    en: (city: string) => `🧥 **Clothing Advice for ${city}**`,
+    timeBishkek: {
+      ky: 'Бишкек убактысы (UTC+6)',
+      ru: 'время Бишкека (UTC+6)',
+      en: 'Bishkek time (UTC+6)',
+    },
+    sourcesLabel: {
+      ky: '📡 <b>Маалымат булактары:</b>\n• Аба ырайы модели: Open-Meteo (ECMWF / GFS)\n• Аймактык багыттар: Кыргызгидромет (meteo.kg)',
+      ru: '📡 <b>Источники данных:</b>\n• Погодная модель: Open-Meteo (ECMWF / GFS)\n• Региональная база и ориентиры: Кыргызгидромет (meteo.kg)',
+      en: '📡 <b>Data Sources:</b>\n• Forecast model: Open-Meteo (ECMWF / GFS)\n• Regional baseline: Kyrgyzhydromet (meteo.kg)',
+    },
   },
 
   forecastTitle: {
-    ky: (city: string) => `📍 **${city} үчүн 3 күндүк аба ырайы божомолу**`,
-    ru: (city: string) => `📍 **Прогноз погоды на 3 дня для ${city}**`,
-    en: (city: string) => `📍 **3-Day Weather Forecast for ${city}**`,
+    ky: (city: string) => `📍 <b>${escapeHtml(city)} — 3 күндүк аба ырайы</b>`,
+    ru: (city: string) => `📍 <b>Прогноз на 3 дня · ${escapeHtml(city)}</b>`,
+    en: (city: string) => `📍 <b>3-Day Weather Forecast · ${escapeHtml(city)}</b>`,
   },
 
   todayLabel: { ky: 'Бүгүн', ru: 'Сегодня', en: 'Today' },
@@ -245,33 +241,39 @@ export const I18N_TEXTS = {
   uvLabel: { ky: 'УФ-индекс', ru: 'УФ-индекс', en: 'UV index' },
 
   settingsTitle: {
-    ky: '⚙️ **Билдирүүлөр жана аба ырайы кызматынын ырастоолору**',
-    ru: '⚙️ **Настройки оповещений и метеослужбы**',
-    en: '⚙️ **Notification and Weather Service Settings**',
+    ky: '⚙️ <b>MeteoBot ырастоолору</b>',
+    ru: '⚙️ <b>Настройки MeteoBot</b>',
+    en: '⚙️ <b>MeteoBot Settings</b>',
   },
 
   settingsCurrentCity: {
-    ky: '📍 Учурдагы аймак:',
+    ky: '📍 Текущий аймак:',
     ru: '📍 Текущий регион:',
     en: '📍 Current region:',
   },
 
   settingsMorning: {
-    ky: '⏰ Эртең мененки маалымат:',
-    ru: '⏰ Утренняя сводка:',
-    en: '⏰ Morning briefing:',
+    ky: '🔔 Эртең мененки маалымат:',
+    ru: '🔔 Утренняя сводка:',
+    en: '🔔 Daily morning briefing:',
+  },
+
+  settingsTime: {
+    ky: '⏰ Убактысы:',
+    ru: '⏰ Время сводки:',
+    en: '⏰ Briefing time:',
   },
 
   settingsRain: {
-    ky: '☔ Жамгыр жөнүндө эскертүү:',
+    ky: '☔ Жамгыр эскертүүсү:',
     ru: '☔ Оповещение о дожде:',
     en: '☔ Rain alert:',
   },
 
   settingsStorm: {
     ky: '🚨 Бороон/шамал эскертүүсү:',
-    ru: '🚨 Экстренный штормовой алерт:',
-    en: '🚨 Severe storm alert:',
+    ru: '🚨 Опасная погода:',
+    en: '🚨 Storm alert:',
   },
 
   settingsLanguage: {
@@ -280,27 +282,27 @@ export const I18N_TEXTS = {
     en: '🌐 Language:',
   },
 
-  enabled: { ky: '✅ Күйүк', ru: '✅ Вкл', en: '✅ On' },
-  disabled: { ky: '❌ Өчүк', ru: '❌ Выкл', en: '❌ Off' },
+  enabled: { ky: 'Вкл', ru: 'Вкл', en: 'On' },
+  disabled: { ky: 'Өчүк', ru: 'Выкл', en: 'Off' },
 
   chooseTimeTitle: {
-    ky: '⏰ **Эртең мененки маалымат үчүн ыңгайлуу убакытты тандаңыз (Бишкек убактысы):**',
-    ru: '⏰ **Выберите удобное время для утренней сводки (по Бишкеку):**',
-    en: '⏰ **Select preferred time for daily morning briefing (Bishkek time):**',
+    ky: '⏰ <b>Эртең мененки маалымат үчүн убакытты тандаңыз</b>\n<i>Часовой пояс: Asia/Bishkek (UTC+6)</i>',
+    ru: '⏰ <b>Выберите время утренней сводки</b>\n<i>Часовой пояс: Asia/Bishkek (UTC+6)</i>',
+    en: '⏰ <b>Select time for daily morning briefing</b>\n<i>Timezone: Asia/Bishkek (UTC+6)</i>',
   },
 
   timeSetSuccess: {
-    ky: (t: string) => `⏰ Эртең мененки маалымат убактысы **${t}** деп коюлду!`,
-    ru: (t: string) => `⏰ Время утренней сводки успешно установлено на **${t}**!`,
-    en: (t: string) => `⏰ Morning briefing time successfully set to **${t}**!`,
+    ky: (t: string) => `⏰ Эртең мененки маалымат убактысы <b>${escapeHtml(t)}</b> деп коюлду (Бишкек убактысы)!`,
+    ru: (t: string) => `⏰ Время утренней сводки установлено на <b>${escapeHtml(t)}</b> (время Бишкека)!`,
+    en: (t: string) => `⏰ Daily briefing time successfully set to <b>${escapeHtml(t)}</b> (Bishkek time)!`,
   },
 
   cityNotFound: {
     ky: (q: string) =>
-      `🔍 Кыргызстандан «**${q}**» деген айыл/шаар табылган жок.\nСураныч, Кыргызстандын шаарын же айылын жазыңыз (мисалы: *Бишкек*, *Ош*, *Каракол*, *Токмок*, *Кочкор*, *Ноокат*) же төмөнкү баскычтан облусту тандаңыз:`,
+      `🔍 Кыргызстандан «<b>${escapeHtml(q)}</b>» деген айыл/шаар табылган жок.\n\nСураныч, Кыргызстандын шаарын же айылын жазыңыз (мисалы: <i>Бишкек, Ош, Каракол, Токмок, Кочкор, Ноокат, Балыкчы</i>) же төмөнкү баскычтан облусту тандаңыз:`,
     ru: (q: string) =>
-      `🔍 В Кыргызстане населённый пункт «**${q}**» не найден.\nПожалуйста, напишите город или село Кыргызстана (например: *Бишкек*, *Ош*, *Каракол*, *Токмок*, *Кочкор*, *Ноокат*) или выберите область кнопкой ниже:`,
+      `🔍 В Кыргызстане населённый пункт «<b>${escapeHtml(q)}</b>» не найден.\n\nПожалуйста, напишите город или село Кыргызстана (например: <i>Бишкек, Ош, Каракол, Токмок, Кочкор, Ноокат, Балыкчы</i>) или выберите область кнопкой ниже:`,
     en: (q: string) =>
-      `🔍 No location «**${q}**» was found in Kyrgyzstan.\nPlease enter a city or village in Kyrgyzstan (e.g., *Bishkek*, *Osh*, *Karakol*, *Tokmok*, *Kochkor*, *Nookat*) or select a region below:`,
+      `🔍 No location «<b>${escapeHtml(q)}</b>» was found in Kyrgyzstan.\n\nPlease enter a city or village in Kyrgyzstan (e.g., <i>Bishkek, Osh, Karakol, Tokmok, Kochkor, Nookat, Balykchy</i>) or select a region below:`,
   },
 };

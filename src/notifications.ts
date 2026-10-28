@@ -2,6 +2,7 @@ import { bot, DEFAULT_TIMEZONE } from './config';
 import { getUsersForNotification, getAllActiveUsers } from './db';
 import { fetchWeatherData } from './weatherService';
 import { formatMorningBriefing, generateAdvice } from './advisor';
+import { safeSendMessage, escapeHtml } from './telegramSafe';
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 let lastNotifiedMinute = '';
@@ -79,7 +80,7 @@ async function checkMorningBriefings(): Promise<void> {
         lang
       );
       const text = formatMorningBriefing(weather, user.first_name || 'друг', lang);
-      await bot.sendMessage(user.id, text, { parse_mode: 'Markdown' });
+      await safeSendMessage(bot, user.id, text);
       // Небольшая задержка между отправками для соблюдения Telegram Rate Limits
       await new Promise((res) => setTimeout(res, 200));
     } catch (err: any) {
@@ -102,23 +103,31 @@ async function checkStormAlerts(): Promise<void> {
     }
 
     try {
-      const weather = await fetchWeatherData(user.city_name, user.latitude, user.longitude, user.timezone);
+      const lang = user.language || 'ru';
+      const weather = await fetchWeatherData(user.city_name, user.latitude, user.longitude, user.timezone, lang);
       const cur = weather.current;
-      const advice = generateAdvice(weather);
+      const advice = generateAdvice(weather, lang);
 
       const isExtremeWind = cur.windGusts >= 18 || cur.windSpeed >= 15;
       const isHeavyRain = cur.weatherCode >= 81 || cur.precipitation >= 8;
 
       if (isExtremeWind || isHeavyRain) {
         alertedUsersStorm.set(user.id, now);
-        const alertMessage = 
-          `🚨 **ЭКСТРЕННОЕ ШТОРМОВОЕ ПРЕДУПРЕЖДЕНИЕ**\n` +
-          `Город: **${weather.cityName}**\n\n` +
-          `${isExtremeWind ? `💨 ${advice.wind}\n` : ''}` +
-          `${isHeavyRain ? `⛈️ Ожидается сильнейший ливень (${cur.precipitation} мм)! Берегите обувь и вещи.\n` : ''}\n` +
-          `Будьте аккуратны на улице!`;
+        const alertTitle =
+          lang === 'ky'
+            ? '🚨 <b>ШАМАЛ/БОРООН ЖӨНҮНДӨ ЭСКЕРТҮҮ</b>'
+            : lang === 'en'
+            ? '🚨 <b>SEVERE WEATHER ALERT</b>'
+            : '🚨 <b>ШТОРМОВОЕ ПРЕДУПРЕЖДЕНИЕ</b>';
 
-        await bot.sendMessage(user.id, alertMessage, { parse_mode: 'Markdown' });
+        const alertMessage =
+          `${alertTitle}\n` +
+          `📍 <b>${escapeHtml(weather.cityName)}</b>\n\n` +
+          `${isExtremeWind ? `${advice.wind}\n` : ''}` +
+          `${isHeavyRain ? `⛈️ <b>Осадки:</b> сильный дождь (${cur.precipitation} мм).\n` : ''}\n` +
+          (lang === 'ky' ? 'Сак болуңуз жана этияттаңыз!' : lang === 'en' ? 'Stay safe outdoors!' : 'Будьте аккуратны на улице!');
+
+        await safeSendMessage(bot, user.id, alertMessage);
       }
     } catch {
       // Игнорируем сетевые сбои в фоновой проверке
