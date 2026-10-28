@@ -121,6 +121,11 @@ export function registerOrUpdateUser(
 
 export function setUserLanguage(telegramId: number, language: Language): void {
   const db = getDb();
+  const existing = getUser(telegramId);
+  if (!existing) {
+    registerOrUpdateUser(telegramId, 'Friend', null, language);
+    return;
+  }
   const stmt = db.prepare(`
     UPDATE users 
     SET language = ?, updated_at = CURRENT_TIMESTAMP
@@ -148,6 +153,10 @@ export function setUserLocation(
   timezone: string = DEFAULT_TIMEZONE
 ): void {
   const db = getDb();
+  const existing = getUser(telegramId);
+  if (!existing) {
+    registerOrUpdateUser(telegramId, 'Friend', null, 'ru');
+  }
   const stmt = db.prepare(`
     UPDATE users 
     SET city_name = ?, latitude = ?, longitude = ?, timezone = ?, updated_at = CURRENT_TIMESTAMP
@@ -161,8 +170,10 @@ export function updateUserSettings(
   settings: Partial<Pick<UserRecord, 'notify_enabled' | 'notify_time' | 'alert_rain' | 'alert_storm' | 'language'>>
 ): void {
   const db = getDb();
-  const current = getUser(telegramId);
-  if (!current) return;
+  let current = getUser(telegramId);
+  if (!current) {
+    current = registerOrUpdateUser(telegramId, 'Friend', null, 'ru');
+  }
 
   const notify_enabled = settings.notify_enabled !== undefined ? settings.notify_enabled : current.notify_enabled;
   const notify_time = settings.notify_time !== undefined ? settings.notify_time : current.notify_time;

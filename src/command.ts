@@ -42,6 +42,12 @@ function cleanQuery(text: string): string {
   return text.replace(/^[^\p{L}\p{N}]+/u, '').trim();
 }
 
+function getValidUser(userId: number, from?: TelegramBot.User): UserRecord {
+  const existing = getUser(userId);
+  if (existing) return existing;
+  return registerOrUpdateUser(userId, from?.first_name || 'Friend', from?.username);
+}
+
 export function initCommands(): void {
   // Команда /start
   bot.onText(/\/start/, async (msg) => {
@@ -335,8 +341,9 @@ export function initCommands(): void {
 
     const chatId = msg.chat.id;
     const userId = query.from.id;
-    const user = getUser(userId);
-    const lang = user?.language || 'ru';
+    // Гарантируем, что пользователь существует в базе данных
+    const user = getUser(userId) || registerOrUpdateUser(userId, query.from.first_name || 'Friend', query.from.username);
+    const lang = user.language || 'ru';
 
     try {
       await bot.answerCallbackQuery(query.id);
@@ -348,8 +355,13 @@ export function initCommands(): void {
       // 1. Выбор языка
       if (data.startsWith('set_lang:')) {
         const selectedLang = normalizeLang(data.split(':')[1]);
+        const updated = registerOrUpdateUser(
+          userId,
+          query.from.first_name || 'Friend',
+          query.from.username,
+          selectedLang
+        );
         setUserLanguage(userId, selectedLang);
-        const updated = getUser(userId)!;
 
         // Если локация ещё не задана — показываем выбор области КР на выбранном языке
         if (!updated.city_name || !updated.latitude) {
@@ -417,7 +429,7 @@ export function initCommands(): void {
             I18N_TEXTS.locationSaved[lang](displayName),
             { ...getMainReplyKeyboard(lang) }
           );
-          const updated = getUser(userId)!;
+          const updated = getValidUser(userId, query.from);
           return sendUserWeather(chatId, updated);
         }
 
@@ -458,7 +470,7 @@ export function initCommands(): void {
           I18N_TEXTS.locationSaved[lang](fullName),
           { ...getMainReplyKeyboard(lang) }
         );
-        const updated = getUser(userId)!;
+        const updated = getValidUser(userId, query.from);
         return sendUserWeather(chatId, updated);
       }
 
@@ -492,21 +504,21 @@ export function initCommands(): void {
       if (data === 'toggle_notify') {
         if (!user) return;
         updateUserSettings(userId, { notify_enabled: user.notify_enabled ? 0 : 1 });
-        const updated = getUser(userId)!;
+        const updated = getValidUser(userId, query.from);
         return sendSettingsMenu(chatId, updated, msg.message_id);
       }
 
       if (data === 'toggle_rain') {
         if (!user) return;
         updateUserSettings(userId, { alert_rain: user.alert_rain ? 0 : 1 });
-        const updated = getUser(userId)!;
+        const updated = getValidUser(userId, query.from);
         return sendSettingsMenu(chatId, updated, msg.message_id);
       }
 
       if (data === 'toggle_storm') {
         if (!user) return;
         updateUserSettings(userId, { alert_storm: user.alert_storm ? 0 : 1 });
-        const updated = getUser(userId)!;
+        const updated = getValidUser(userId, query.from);
         return sendSettingsMenu(chatId, updated, msg.message_id);
       }
 
@@ -528,7 +540,7 @@ export function initCommands(): void {
         }
 
         updateUserSettings(userId, { notify_time: cleanTime, notify_enabled: 1 });
-        const updated = getUser(userId)!;
+        const updated = getValidUser(userId, query.from);
 
         await safeSendMessage(chatId ? bot : bot, chatId, I18N_TEXTS.timeSetSuccess[lang](cleanTime));
         return sendSettingsMenu(chatId, updated);
@@ -548,7 +560,7 @@ export function initCommands(): void {
           { ...getMainReplyKeyboard(lang) }
         );
 
-        const updated = getUser(userId)!;
+        const updated = getValidUser(userId, query.from);
         return sendUserWeather(chatId, updated);
       }
 
@@ -781,7 +793,7 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
         { ...getMainReplyKeyboard(lang) }
       );
 
-      const updated = getUser(userId)!;
+      const updated = getValidUser(userId);
       return sendUserWeather(chatId, updated);
     }
 
