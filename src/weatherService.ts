@@ -4,6 +4,7 @@ import {
   DEFAULT_TIMEZONE,
   DEFAULT_COUNTRY_CODE,
 } from './config';
+import { findLocalKyrgyzPlace } from './kyrgyzstanData';
 
 export interface GeocodeLocation {
   name: string;
@@ -129,62 +130,61 @@ export function getWeatherDescription(code: number): { description: string; emoj
 }
 
 /**
- * Поиск населенных пунктов с приоритетом для Кыргызстана (KG)
+ * Поиск населенных пунктов строго в Кыргызстане (KG)
  */
 export async function searchCities(query: string): Promise<GeocodeLocation[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  // 1. Сначала ищем с фильтром по Кыргызстану (country_code=KG)
+  // 1. Сначала проверяем локальную базу городов и районов Кыргызстана
+  const localMatch = findLocalKyrgyzPlace(trimmed);
+  if (localMatch) {
+    return [
+      {
+        name: localMatch.name,
+        latitude: localMatch.latitude,
+        longitude: localMatch.longitude,
+        country: 'Кыргызстан',
+        countryCode: 'KG',
+        admin1: localMatch.region,
+        timezone: localMatch.timezone,
+      },
+    ];
+  }
+
+  // 2. Ищем через онлайн геокодер и СТРОГО фильтруем только Кыргызстан (KG)
   try {
-    const kgUrl = `${GEOCODING_API_URL}?name=${encodeURIComponent(trimmed)}&count=5&language=ru&format=json&country_code=${DEFAULT_COUNTRY_CODE}`;
-    const kgRes = await fetch(kgUrl);
-    if (kgRes.ok) {
-      const kgData = (await kgRes.json()) as { results?: Array<any> };
-      if (kgData.results && kgData.results.length > 0) {
-        return kgData.results.map((item) => ({
-          name: item.name,
-          latitude: item.latitude,
-          longitude: item.longitude,
-          country: item.country || 'Кыргызстан',
-          countryCode: item.country_code || 'KG',
-          admin1: item.admin1,
-          timezone: item.timezone || DEFAULT_TIMEZONE,
-        }));
-      }
+    const url = `${GEOCODING_API_URL}?name=${encodeURIComponent(trimmed)}&count=20&language=ru&format=json`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      return [];
     }
-  } catch {
-    // В случае сбоя переходим к общему поиску
-  }
 
-  // 2. Если в Кыргызстане точного совпадения нет — ищем шире, но сортируем KG наверх
-  const generalUrl = `${GEOCODING_API_URL}?name=${encodeURIComponent(trimmed)}&count=6&language=ru&format=json`;
-  const res = await fetch(generalUrl);
-  if (!res.ok) {
-    throw new Error(`Ошибка геокодирования: ${res.status}`);
-  }
+    const data = (await res.json()) as { results?: Array<any> };
+    if (!data.results || !data.results.length) {
+      return [];
+    }
 
-  const data = (await res.json()) as { results?: Array<any> };
-  if (!data.results || !data.results.length) {
+    // Жесткая фильтрация: только Кыргызстан
+    const kgOnly = data.results.filter((item) => {
+      const code = (item.country_code || '').toUpperCase();
+      const country = (item.country || '').toLowerCase();
+      return code === 'KG' || country.includes('кыргыз') || country.includes('kyrgyz');
+    });
+
+    return kgOnly.map((item) => ({
+      name: item.name,
+      latitude: item.latitude,
+      longitude: item.longitude,
+      country: 'Кыргызстан',
+      countryCode: 'KG',
+      admin1: item.admin1 || 'Кыргызстан',
+      timezone: item.timezone || DEFAULT_TIMEZONE,
+    }));
+  } catch (err) {
+    console.error('Ошибка геокодирования:', err);
     return [];
   }
-
-  // Сортируем так, чтобы Кыргызстан всегда был в начале списка
-  const sorted = data.results.sort((a, b) => {
-    const aIsKg = (a.country_code || '').toUpperCase() === DEFAULT_COUNTRY_CODE ? 1 : 0;
-    const bIsKg = (b.country_code || '').toUpperCase() === DEFAULT_COUNTRY_CODE ? 1 : 0;
-    return bIsKg - aIsKg;
-  });
-
-  return sorted.map((item) => ({
-    name: item.name,
-    latitude: item.latitude,
-    longitude: item.longitude,
-    country: item.country,
-    countryCode: item.country_code,
-    admin1: item.admin1,
-    timezone: item.timezone || DEFAULT_TIMEZONE,
-  }));
 }
 
 export async function reverseGeocode(latitude: number, longitude: number): Promise<string> {

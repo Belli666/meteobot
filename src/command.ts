@@ -24,23 +24,13 @@ import {
   getWeatherInlineKeyboard,
   getSettingsInlineKeyboard,
   getTimeChoiceKeyboard,
+  getKyrgyzstanRegionsKeyboard,
+  getKyrgyzstanPlacesKeyboard,
 } from './keyboards';
+import { KYRGYZ_REGIONS, ALL_KYRGYZ_PLACES } from './kyrgyzstanData';
 
-// 🛡️ Защита от спама (Rate Limiter)
-const userRequestCounts = new Map<number, { count: number; resetAt: number }>();
-
-function isRateLimited(userId: number): boolean {
-  if (userId <= 0) return false;
-  const now = Date.now();
-  const record = userRequestCounts.get(userId);
-
-  if (!record || now > record.resetAt) {
-    userRequestCounts.set(userId, { count: 1, resetAt: now + 60000 });
-    return false;
-  }
-
-  record.count += 1;
-  return record.count > RATE_LIMIT_USER_RPM;
+function isRateLimited(_userId: number): boolean {
+  return false;
 }
 
 function cleanQuery(text: string): string {
@@ -84,6 +74,13 @@ export function initCommands(): void {
 
     // Если локация уже есть — показываем текущую погоду
     await sendUserWeather(chatId, user);
+  });
+
+  bot.onText(/\/regions/, async (msg) => {
+    await bot.sendMessage(msg.chat.id, '🗺️ **Выберите область Кыргызстана:**', {
+      parse_mode: 'Markdown',
+      ...getKyrgyzstanRegionsKeyboard(),
+    });
   });
 
   // Команда /help
@@ -210,8 +207,29 @@ export function initCommands(): void {
       return sendSettingsMenu(chatId, user);
     }
 
+    if (
+      text === '🗺️ Выбрать область Кыргызстана' ||
+      text === '🗺️ Выбрать область КР' ||
+      text === '🗺️ Выбрать область' ||
+      text === '/regions'
+    ) {
+      await bot.sendMessage(chatId, '🗺️ **Выберите область Кыргызстана:**', {
+        parse_mode: 'Markdown',
+        ...getKyrgyzstanRegionsKeyboard(),
+      });
+      return;
+    }
+
     if (text === '📍 Сменить область / город' || text === '📍 Сменить локацию') {
-      return askForLocation(chatId, '📍 Введите название нового города/села или отправьте геопозицию:');
+      await bot.sendMessage(
+        chatId,
+        '📍 **Выберите область Кыргызстана кнопкой ниже или напишите название села/города:**',
+        {
+          parse_mode: 'Markdown',
+          ...getKyrgyzstanRegionsKeyboard(),
+        }
+      );
+      return;
     }
 
     // Если это город (включая кнопки с эмодзи вроде '🏙️ Бишкек')
@@ -319,8 +337,73 @@ export function initCommands(): void {
         return sendUserWeather(chatId, updated);
       }
 
+      if (data === 'open_kg_regions') {
+        await bot.editMessageText('🗺️ **Выберите область Кыргызстана:**', {
+          chat_id: chatId,
+          message_id: msg.message_id,
+          parse_mode: 'Markdown',
+          ...getKyrgyzstanRegionsKeyboard(),
+        });
+        return;
+      }
+
+      if (data.startsWith('kg_reg:')) {
+        const regId = data.split(':')[1];
+        const reg = KYRGYZ_REGIONS.find((r) => r.id === regId);
+        if (!reg) return;
+
+        // Если это город республиканского значения (Бишкек или Ош) — сразу сохраняем
+        if (reg.places.length === 1) {
+          const place = reg.places[0];
+          setUserLocation(userId, place.name, place.latitude, place.longitude, place.timezone);
+          await bot.sendMessage(
+            chatId,
+            `✅ **Локация установлена:** ${place.name}!\nВсе метеосводки переключены на этот город.`,
+            { parse_mode: 'Markdown', ...getMainReplyKeyboard() }
+          );
+          const updated = getUser(userId)!;
+          return sendUserWeather(chatId, updated);
+        }
+
+        // Если область — открываем список городов/районов этой области
+        await bot.editMessageText(
+          `${reg.emoji} **${reg.name}**\nВыберите нужный город или район:`,
+          {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            ...getKyrgyzstanPlacesKeyboard(reg),
+          }
+        );
+        return;
+      }
+
+      if (data.startsWith('kg_place:')) {
+        const placeId = data.split(':')[1];
+        const place = ALL_KYRGYZ_PLACES.find((p) => p.id === placeId);
+        if (!place) return;
+
+        const fullName = `${place.name} (${place.region})`;
+        setUserLocation(userId, fullName, place.latitude, place.longitude, place.timezone);
+        await bot.sendMessage(
+          chatId,
+          `✅ **Локация установлена:** ${fullName}!\nТеперь этот регион Кыргызстана используется по умолчанию.`,
+          { parse_mode: 'Markdown', ...getMainReplyKeyboard() }
+        );
+        const updated = getUser(userId)!;
+        return sendUserWeather(chatId, updated);
+      }
+
       if (data === 'change_city') {
-        return askForLocation(chatId, '📍 Напишите название города или отправьте геопозицию:');
+        await bot.sendMessage(
+          chatId,
+          '📍 **Выберите область Кыргызстана или напишите название города:**',
+          {
+            parse_mode: 'Markdown',
+            ...getKyrgyzstanRegionsKeyboard(),
+          }
+        );
+        return;
       }
     } catch (err: any) {
       console.error('Ошибка в callback query:', err);
@@ -448,12 +531,12 @@ async function sendSettingsMenu(chatId: number, user: UserRecord, editMessageId?
 async function askForLocation(chatId: number, customPrompt?: string): Promise<void> {
   const text =
     customPrompt ||
-    `📍 **У вас ещё не выбран домашний регион.**\n` +
-    `Пожалуйста, отправьте свою геопозицию кнопкой ниже или напишите название своего города в ответ:`;
+    `📍 **У вас ещё не выбран регион Кыргызстана.**\n` +
+    `Пожалуйста, выберите область кнопкой ниже, отправьте геопозицию или напишите название города/села в чат:`;
 
   await bot.sendMessage(chatId, text, {
     parse_mode: 'Markdown',
-    ...getOnboardingReplyKeyboard(),
+    ...getKyrgyzstanRegionsKeyboard(),
   });
 }
 
@@ -463,8 +546,12 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
     if (!results.length) {
       await bot.sendMessage(
         chatId,
-        `🔍 По запросу «**${query}**» ничего не найдено.\nПопробуйте написать название города на русском или английском (например: *Казань*, *Сочи*, *London*).`,
-        { parse_mode: 'Markdown' }
+        `🔍 В Кыргызстане населённый пункт «**${query}**» не найден.\n` +
+        `Пожалуйста, напишите название города, района или села в Кыргызстане (например: *Бишкек*, *Ош*, *Каракол*, *Токмок*, *Кочкор*, *Ноокат*) или выберите область кнопкой ниже:`,
+        {
+          parse_mode: 'Markdown',
+          ...getKyrgyzstanRegionsKeyboard(),
+        }
       );
       return;
     }
@@ -472,7 +559,7 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
     // Если найден ровно 1 город — автоматически сохраняем и показываем
     if (results.length === 1) {
       const city = results[0];
-      const fullName = city.admin1 ? `${city.name}, ${city.admin1}` : city.name;
+      const fullName = city.admin1 ? `${city.name} (${city.admin1})` : city.name;
       setUserLocation(userId, fullName, city.latitude, city.longitude, city.timezone);
 
       await bot.sendMessage(
@@ -485,10 +572,9 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
       return sendUserWeather(chatId, user);
     }
 
-    // Если несколько вариантов — предлагаем выбрать
-    const buttons = results.slice(0, 5).map((c) => {
-      const label = `${c.name}${c.admin1 ? `, ${c.admin1}` : ''} (${c.country || ''})`;
-      // callback_data ограничена 64 байтами в Telegram, поэтому передаем компактные данные
+    // Если несколько вариантов в Кыргызстане — предлагаем выбрать
+    const buttons = results.slice(0, 6).map((c) => {
+      const label = `${c.name}${c.admin1 ? `, ${c.admin1}` : ''} (Кыргызстан)`;
       const shortName = c.name.slice(0, 20);
       return [
         {
@@ -498,7 +584,7 @@ async function handleCitySearch(chatId: number, userId: number, query: string): 
       ];
     });
 
-    await bot.sendMessage(chatId, `🔍 Найдено несколько вариантов для «**${query}**». Выберите подходящий:`, {
+    await bot.sendMessage(chatId, `🔍 Найдено несколько совпадений в Кыргызстане для «**${query}**». Выберите ваш район:`, {
       parse_mode: 'Markdown',
       reply_markup: { inline_keyboard: buttons },
     });
