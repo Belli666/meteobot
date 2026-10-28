@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:view": "sqlite3 -header -column data/meteobot.sqlite \"SELECT id, first_name, username, city_name, language FROM users;\"",
+    "db:clear": "sqlite3 data/meteobot.sqlite \"DELETE FROM users;\""
   },
   "dependencies": {
     "dotenv": "^17.2.4",

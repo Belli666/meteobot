@@ -6,6 +6,7 @@ import {
   setUserLocation,
   setUserLanguage,
   updateUserSettings,
+  deleteUser,
   UserRecord,
 } from './db';
 import {
@@ -57,6 +58,26 @@ export function initCommands(): void {
 
     // Если локация уже есть — показываем погоду на языке пользователя
     await sendUserWeather(chatId, user);
+  });
+
+  // Команда сброса памяти о пользователе (/reset)
+  bot.onText(/\/reset/, async (msg) => {
+    const from = msg.from;
+    if (!from) return;
+
+    deleteUser(from.id);
+
+    const resetNotice =
+      `🗑️ **Память очищена / Дайындар тазаланды / Memory cleared!**\n\n` +
+      `🇰🇬 Сиздин бардык орнотууларыңыз өчүрүлдү.\n` +
+      `🇷🇺 Все ваши сохранённые данные и регион сброшены.\n` +
+      `🇬🇧 All your saved settings and location have been reset.\n\n` +
+      I18N_TEXTS.welcomeMultilingual(from.first_name || 'Friend');
+
+    await bot.sendMessage(msg.chat.id, resetNotice, {
+      parse_mode: 'Markdown',
+      ...getLanguageSelectionKeyboard(),
+    });
   });
 
   // Команда смены языка /language или /lang

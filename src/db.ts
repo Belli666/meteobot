@@ -118,6 +118,17 @@ export function setUserLanguage(telegramId: number, language: Language): void {
   stmt.run(language, telegramId);
 }
 
+export function deleteUser(telegramId: number): void {
+  const db = getDb();
+  const stmt = db.prepare('DELETE FROM users WHERE id = ?');
+  stmt.run(telegramId);
+}
+
+export function clearAllUsers(): void {
+  const db = getDb();
+  db.exec('DELETE FROM users');
+}
+
 export function setUserLocation(
   telegramId: number,
   cityName: string,
