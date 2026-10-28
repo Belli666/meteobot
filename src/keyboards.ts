@@ -1,15 +1,18 @@
 import { InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'node-telegram-bot-api';
 import { UserRecord } from './db';
 
-// Клавиатура выбора геопозиции при первом старте (Reply Keyboard)
+/**
+ * Клавиатура выбора геопозиции и основных областей/городов Кыргызстана
+ */
 export function getOnboardingReplyKeyboard(): { reply_markup: ReplyKeyboardMarkup } {
   return {
     reply_markup: {
       keyboard: [
         [{ text: '📍 Отправить мою геопозицию', request_location: true }],
-        [{ text: 'Москва' }, { text: 'Санкт-Петербург' }],
-        [{ text: 'Новосибирск' }, { text: 'Екатеринбург' }],
-        [{ text: 'Казань' }, { text: 'Минск' }],
+        [{ text: '🏙️ Бишкек' }, { text: '🏔️ Ош' }],
+        [{ text: '🌊 Каракол' }, { text: '⛰️ Нарын' }],
+        [{ text: '🌿 Джалал-Абад' }, { text: '🌾 Талас' }],
+        [{ text: '🏜️ Баткен' }, { text: '🏖️ Чолпон-Ата' }],
       ],
       resize_keyboard: true,
       one_time_keyboard: false,
@@ -17,14 +20,16 @@ export function getOnboardingReplyKeyboard(): { reply_markup: ReplyKeyboardMarku
   };
 }
 
-// Постоянная нижняя панель быстрого доступа
+/**
+ * Постоянная нижняя панель быстрого доступа
+ */
 export function getMainReplyKeyboard(): { reply_markup: ReplyKeyboardMarkup } {
   return {
     reply_markup: {
       keyboard: [
         [{ text: '🌡️ Моя погода' }, { text: '☂️ Зонт' }, { text: '🧥 Что надеть' }],
         [{ text: '📅 Прогноз на 3 дня' }, { text: '⚙️ Настройки' }],
-        [{ text: '📍 Сменить локацию' }],
+        [{ text: '📍 Сменить область / город' }],
       ],
       resize_keyboard: true,
       one_time_keyboard: false,
@@ -32,7 +37,9 @@ export function getMainReplyKeyboard(): { reply_markup: ReplyKeyboardMarkup } {
   };
 }
 
-// Интерактивное Inline-меню под карточкой погоды
+/**
+ * Интерактивное Inline-меню под карточкой погоды
+ */
 export function getWeatherInlineKeyboard(): { reply_markup: InlineKeyboardMarkup } {
   return {
     reply_markup: {
@@ -53,7 +60,9 @@ export function getWeatherInlineKeyboard(): { reply_markup: InlineKeyboardMarkup
   };
 }
 
-// Меню настроек уведомлений
+/**
+ * Меню настроек уведомлений
+ */
 export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: InlineKeyboardMarkup } {
   const notifyState = user.notify_enabled ? '✅ Вкл' : '❌ Выкл';
   const rainState = user.alert_rain ? '✅ Вкл' : '❌ Выкл';
@@ -69,7 +78,7 @@ export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: Inl
           },
         ],
         [
-          { text: `⏰ Время: ${user.notify_time || '07:30'}`, callback_data: 'choose_time' },
+          { text: `⏰ Время: ${user.notify_time || '07:30'} (Бишкек)`, callback_data: 'choose_time' },
         ],
         [
           {
@@ -84,7 +93,7 @@ export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: Inl
           },
         ],
         [
-          { text: '📍 Изменить город/область', callback_data: 'change_city' },
+          { text: '📍 Изменить область / город', callback_data: 'change_city' },
         ],
         [
           { text: '⬅️ Назад к погоде', callback_data: 'weather_refresh' },
@@ -94,7 +103,9 @@ export function getSettingsInlineKeyboard(user: UserRecord): { reply_markup: Inl
   };
 }
 
-// Выбор времени утреннего брифинга
+/**
+ * Выбор времени утреннего брифинга (по времени Бишкека / UTC+6)
+ */
 export function getTimeChoiceKeyboard(): { reply_markup: InlineKeyboardMarkup } {
   return {
     reply_markup: {

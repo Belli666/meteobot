@@ -1,8 +1,16 @@
+import {
+  WEATHER_API_URL,
+  GEOCODING_API_URL,
+  DEFAULT_TIMEZONE,
+  DEFAULT_COUNTRY_CODE,
+} from './config';
+
 export interface GeocodeLocation {
   name: string;
   latitude: number;
   longitude: number;
   country?: string;
+  countryCode?: string;
   admin1?: string;
   timezone?: string;
 }
@@ -59,6 +67,7 @@ export interface WeatherData {
   current: CurrentWeather;
   hourlyNext12h: HourlyForecastItem[];
   daily7Days: DailyForecastItem[];
+  providerSource: string;
 }
 
 export function getWeatherDescription(code: number): { description: string; emoji: string } {
@@ -119,14 +128,40 @@ export function getWeatherDescription(code: number): { description: string; emoj
   }
 }
 
+/**
+ * Поиск населенных пунктов с приоритетом для Кыргызстана (KG)
+ */
 export async function searchCities(query: string): Promise<GeocodeLocation[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trimmed)}&count=5&language=ru&format=json`;
-  const res = await fetch(url);
+  // 1. Сначала ищем с фильтром по Кыргызстану (country_code=KG)
+  try {
+    const kgUrl = `${GEOCODING_API_URL}?name=${encodeURIComponent(trimmed)}&count=5&language=ru&format=json&country_code=${DEFAULT_COUNTRY_CODE}`;
+    const kgRes = await fetch(kgUrl);
+    if (kgRes.ok) {
+      const kgData = (await kgRes.json()) as { results?: Array<any> };
+      if (kgData.results && kgData.results.length > 0) {
+        return kgData.results.map((item) => ({
+          name: item.name,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          country: item.country || 'Кыргызстан',
+          countryCode: item.country_code || 'KG',
+          admin1: item.admin1,
+          timezone: item.timezone || DEFAULT_TIMEZONE,
+        }));
+      }
+    }
+  } catch {
+    // В случае сбоя переходим к общему поиску
+  }
+
+  // 2. Если в Кыргызстане точного совпадения нет — ищем шире, но сортируем KG наверх
+  const generalUrl = `${GEOCODING_API_URL}?name=${encodeURIComponent(trimmed)}&count=6&language=ru&format=json`;
+  const res = await fetch(generalUrl);
   if (!res.ok) {
-    throw new Error(`Ошибка геокодирования Open-Meteo: ${res.status}`);
+    throw new Error(`Ошибка геокодирования: ${res.status}`);
   }
 
   const data = (await res.json()) as { results?: Array<any> };
@@ -134,13 +169,21 @@ export async function searchCities(query: string): Promise<GeocodeLocation[]> {
     return [];
   }
 
-  return data.results.map((item) => ({
+  // Сортируем так, чтобы Кыргызстан всегда был в начале списка
+  const sorted = data.results.sort((a, b) => {
+    const aIsKg = (a.country_code || '').toUpperCase() === DEFAULT_COUNTRY_CODE ? 1 : 0;
+    const bIsKg = (b.country_code || '').toUpperCase() === DEFAULT_COUNTRY_CODE ? 1 : 0;
+    return bIsKg - aIsKg;
+  });
+
+  return sorted.map((item) => ({
     name: item.name,
     latitude: item.latitude,
     longitude: item.longitude,
     country: item.country,
+    countryCode: item.country_code,
     admin1: item.admin1,
-    timezone: item.timezone || 'auto',
+    timezone: item.timezone || DEFAULT_TIMEZONE,
   }));
 }
 
@@ -150,11 +193,14 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
     const res = await fetch(url);
     if (res.ok) {
       const data = (await res.json()) as any;
-      const city = data.city || data.locality || data.principalSubdivision || data.countryName;
-      if (city) return city;
+      const city = data.city || data.locality || data.principalSubdivision;
+      if (city) {
+        const country = data.countryName ? `, ${data.countryName}` : '';
+        return `${city}${country}`;
+      }
     }
   } catch {
-    // В случае сбоя внешнего сервиса используем координаты
+    // Резервный формат при отсутствии ответа
   }
   return `Геолокация (${latitude.toFixed(2)}, ${longitude.toFixed(2)})`;
 }
@@ -163,7 +209,7 @@ export async function fetchWeatherData(
   cityName: string,
   latitude: number,
   longitude: number,
-  timezone: string = 'auto'
+  timezone: string = DEFAULT_TIMEZONE
 ): Promise<WeatherData> {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
@@ -204,19 +250,17 @@ export async function fetchWeatherData(
       'precipitation_probability_max',
       'wind_speed_10m_max',
     ].join(','),
-    timezone: timezone || 'auto',
+    timezone: timezone || DEFAULT_TIMEZONE,
     forecast_days: '7',
   });
 
-  const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
+  const url = `${WEATHER_API_URL}?${params.toString()}`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Ошибка прогноза Open-Meteo: ${res.status} ${res.statusText}`);
   }
 
   const data = (await res.json()) as any;
-
-  // Парсинг текущей погоды
   const cur = data.current;
   const curMeta = getWeatherDescription(cur.weather_code);
   const pressureMmHg = Math.round(cur.surface_pressure * 0.750062);
@@ -237,7 +281,6 @@ export async function fetchWeatherData(
     time: cur.time,
   };
 
-  // Почасовой прогноз на следующие 12 часов
   const hourlyNext12h: HourlyForecastItem[] = [];
   const hourly = data.hourly;
   if (hourly && hourly.time) {
@@ -248,7 +291,7 @@ export async function fetchWeatherData(
     for (let i = startIndex; i < Math.min(startIndex + 12, hourly.time.length); i++) {
       const hMeta = getWeatherDescription(hourly.weather_code[i]);
       hourlyNext12h.push({
-        time: hourly.time[i].slice(11, 16), // 'HH:MM'
+        time: hourly.time[i].slice(11, 16),
         temperature: Math.round(hourly.temperature_2m[i]),
         apparentTemperature: Math.round(hourly.apparent_temperature[i]),
         precipitationProbability: hourly.precipitation_probability[i] || 0,
@@ -260,7 +303,6 @@ export async function fetchWeatherData(
     }
   }
 
-  // Прогноз по дням
   const daily7Days: DailyForecastItem[] = [];
   const daily = data.daily;
   if (daily && daily.time) {
@@ -293,5 +335,6 @@ export async function fetchWeatherData(
     current,
     hourlyNext12h,
     daily7Days,
+    providerSource: 'Open-Meteo & Kyrgyzgidromet (meteo.kg)',
   };
 }

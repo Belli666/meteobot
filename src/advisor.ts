@@ -119,7 +119,9 @@ export function formatWeatherMessage(weather: WeatherData): string {
     `${advice.clothing}\n\n` +
     `${advice.wind}\n` +
     (today && today.uvIndexMax >= 3 ? `\n${advice.sun}\n` : '') +
-    (cur.pressureMmHg < 742 || cur.pressureMmHg > 765 ? `\n${advice.health}\n` : '')
+    (cur.pressureMmHg < 742 || cur.pressureMmHg > 765 ? `\n${advice.health}\n` : '') +
+    `\n───────────────\n` +
+    `📡 *Данные: ${weather.providerSource}*`
   );
 }
 

@@ -1,4 +1,4 @@
-import { bot } from './config';
+import { bot, DEFAULT_TIMEZONE } from './config';
 import { getUsersForNotification, getAllActiveUsers } from './db';
 import { fetchWeatherData } from './weatherService';
 import { formatMorningBriefing, generateAdvice } from './advisor';
@@ -7,14 +7,29 @@ let schedulerInterval: NodeJS.Timeout | null = null;
 let lastNotifiedMinute = '';
 const alertedUsersStorm = new Map<number, number>(); // userId -> timestamp последнего алерта
 
+function getLocalTimeHHMM(timeZone: string = DEFAULT_TIMEZONE): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: timeZone || DEFAULT_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return formatter.format(new Date());
+  } catch {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+}
+
 export function startNotificationScheduler(): void {
   if (schedulerInterval) {
     return;
   }
 
-  console.log('⏰ [MeteoBot] Планировщик утренних брифингов и алертов запущен.');
+  console.log(`⏰ [MeteoBot] Планировщик утренних брифингов запущен (часовой пояс: ${DEFAULT_TIMEZONE}).`);
 
-  // Проверяем каждую минуту (каждые 30 сек)
+  // Проверяем каждые 30 секунд
   schedulerInterval = setInterval(async () => {
     try {
       await checkMorningBriefings();
@@ -34,11 +49,7 @@ export function stopNotificationScheduler(): void {
 }
 
 async function checkMorningBriefings(): Promise<void> {
-  const now = new Date();
-  // Формат времени HH:MM
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const currentTime = `${hours}:${minutes}`;
+  const currentTime = getLocalTimeHHMM(DEFAULT_TIMEZONE);
 
   // Защита от повторной отправки в ту же самую минуту
   if (currentTime === lastNotifiedMinute) {

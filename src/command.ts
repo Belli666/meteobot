@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { bot } from './config';
+import { bot, RATE_LIMIT_USER_RPM, DEFAULT_COUNTRY } from './config';
 import {
   getUser,
   registerOrUpdateUser,
@@ -26,6 +26,28 @@ import {
   getTimeChoiceKeyboard,
 } from './keyboards';
 
+// 🛡️ Защита от спама (Rate Limiter)
+const userRequestCounts = new Map<number, { count: number; resetAt: number }>();
+
+function isRateLimited(userId: number): boolean {
+  if (userId <= 0) return false;
+  const now = Date.now();
+  const record = userRequestCounts.get(userId);
+
+  if (!record || now > record.resetAt) {
+    userRequestCounts.set(userId, { count: 1, resetAt: now + 60000 });
+    return false;
+  }
+
+  record.count += 1;
+  return record.count > RATE_LIMIT_USER_RPM;
+}
+
+function cleanQuery(text: string): string {
+  // Убираем ведущие эмодзи вроде '🏙️ Бишкек' -> 'Бишкек'
+  return text.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+}
+
 export function initCommands(): void {
   // Команда /start
   bot.onText(/\/start/, async (msg) => {
@@ -33,20 +55,25 @@ export function initCommands(): void {
     const from = msg.from;
     if (!from) return;
 
+    if (isRateLimited(from.id)) {
+      await bot.sendMessage(chatId, '⚠️ Слишком много запросов. Подождите несколько секунд.');
+      return;
+    }
+
     const user = registerOrUpdateUser(from.id, from.first_name || 'Друг', from.username);
 
-    // Если локация ещё не задана — запускаем онбординг с обязательным выбором области
+    // Если локация ещё не задана — запускаем онбординг с обязательным выбором области Кыргызстана
     if (!user.city_name || !user.latitude || !user.longitude) {
       const welcomeText =
-        `👋 **Привет, ${from.first_name}!**\n\n` +
-        `🌤️ Я твой персональный метеорологический ассистент **MeteoBot**.\n\n` +
+        `👋 **Салам, ${from.first_name}!**\n\n` +
+        `🌤️ Я персональный метеорологический ассистент **MeteoBot** по Кыргызстану.\n\n` +
         `Я помогу тебе:\n` +
-        `• ☂️ Всегда знать, **нужен ли сегодня зонт**, чтобы не попасть под дождь;\n` +
+        `• ☂️ Всегда знать, **нужен ли сегодня зонт**, чтобы не промокнуть под дождем или снегом;\n` +
         `• 🧥 Подобрать одежду по комфорту («ощущается как»);\n` +
-        `• 🔔 Получать утреннюю сводку в удобное для тебя время;\n` +
-        `• 🚨 Заранее узнавать о штормах, резких порывах ветра и перепадах давления.\n\n` +
-        `📍 **Чтобы начать, выбери свой регион:**\n` +
-        `Нажми кнопку ниже, чтобы поделиться геопозицией, выбери город из списка или просто напиши название своего города мне в ответ!`;
+        `• 🔔 Получать утреннюю сводку в удобное для тебя время (по Бишкеку);\n` +
+        `• 🚨 Заранее узнавать о штормовом ветре, пыльных бурях и осадках.\n\n` +
+        `📍 **Чтобы начать, выберите свой регион/город:**\n` +
+        `Нажмите кнопку ниже, чтобы поделиться геопозицией, выберите область из списка или просто напишите название своего города мне в ответ!`;
 
       await bot.sendMessage(chatId, welcomeText, {
         parse_mode: 'Markdown',
@@ -149,6 +176,12 @@ export function initCommands(): void {
     const text = msg.text.trim();
     const chatId = msg.chat.id;
     const userId = msg.from?.id || 0;
+
+    if (isRateLimited(userId)) {
+      await bot.sendMessage(chatId, '⚠️ Слишком много сообщений. Пожалуйста, подождите пару секунд.');
+      return;
+    }
+
     const user = getUser(userId);
 
     // Кнопки нижней панели
@@ -177,12 +210,13 @@ export function initCommands(): void {
       return sendSettingsMenu(chatId, user);
     }
 
-    if (text === '📍 Сменить локацию') {
-      return askForLocation(chatId, '📍 Введите название нового города или отправьте геопозицию:');
+    if (text === '📍 Сменить область / город' || text === '📍 Сменить локацию') {
+      return askForLocation(chatId, '📍 Введите название нового города/села или отправьте геопозицию:');
     }
 
-    // Если сообщение не системное, трактуем как поиск города
-    await handleCitySearch(chatId, userId, text);
+    // Если это город (включая кнопки с эмодзи вроде '🏙️ Бишкек')
+    const queryToSearch = cleanQuery(text);
+    await handleCitySearch(chatId, userId, queryToSearch);
   });
 
   // Обработка Inline-кнопок
