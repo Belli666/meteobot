@@ -212,14 +212,11 @@ export function findLocalKyrgyzPlace(query: string, lang: Language = 'ru'): { pl
   const q = query.trim().toLowerCase();
   if (!q) return null;
 
-  // Ищем совпадение по любому из 3 языков
+  // 1. Приоритет: точное совпадение по названию
   const exact = ALL_KYRGYZ_PLACES.find((p) =>
     p.name.ky.toLowerCase() === q ||
     p.name.ru.toLowerCase() === q ||
-    p.name.en.toLowerCase() === q ||
-    p.name.ky.toLowerCase().includes(q) ||
-    p.name.ru.toLowerCase().includes(q) ||
-    p.name.en.toLowerCase().includes(q)
+    p.name.en.toLowerCase() === q
   );
 
   if (exact) {
@@ -230,7 +227,37 @@ export function findLocalKyrgyzPlace(query: string, lang: Language = 'ru'): { pl
     };
   }
 
-  // Проверка по названию региона
+  // 2. По началу слова (префикс)
+  const prefix = ALL_KYRGYZ_PLACES.find((p) =>
+    p.name.ky.toLowerCase().startsWith(q) ||
+    p.name.ru.toLowerCase().startsWith(q) ||
+    p.name.en.toLowerCase().startsWith(q)
+  );
+
+  if (prefix) {
+    return {
+      place: prefix,
+      displayName: prefix.name[lang] || prefix.name.ru,
+      displayRegion: prefix.region[lang] || prefix.region.ru,
+    };
+  }
+
+  // 3. По подстроке в названии
+  const sub = ALL_KYRGYZ_PLACES.find((p) =>
+    p.name.ky.toLowerCase().includes(q) ||
+    p.name.ru.toLowerCase().includes(q) ||
+    p.name.en.toLowerCase().includes(q)
+  );
+
+  if (sub) {
+    return {
+      place: sub,
+      displayName: sub.name[lang] || sub.name.ru,
+      displayRegion: sub.region[lang] || sub.region.ru,
+    };
+  }
+
+  // 4. По названию региона
   const regionMatch = KYRGYZ_REGIONS.find((r) =>
     r.name.ky.toLowerCase().includes(q) ||
     r.name.ru.toLowerCase().includes(q) ||

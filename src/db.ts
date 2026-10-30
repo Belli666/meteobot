@@ -205,6 +205,21 @@ export function getUsersForNotification(timeHHMM: string): UserRecord[] {
   }));
 }
 
+export function getAllActiveNotificationUsers(): UserRecord[] {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT * FROM users 
+    WHERE notify_enabled = 1 
+      AND latitude IS NOT NULL 
+      AND longitude IS NOT NULL
+  `);
+  const rows = stmt.all() as any[];
+  return rows.map((r) => ({
+    ...r,
+    language: normalizeLang(r.language),
+  }));
+}
+
 export function getAllActiveUsers(): UserRecord[] {
   const db = getDb();
   const stmt = db.prepare('SELECT * FROM users WHERE latitude IS NOT NULL AND longitude IS NOT NULL');

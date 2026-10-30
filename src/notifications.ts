@@ -1,12 +1,16 @@
 import { bot, DEFAULT_TIMEZONE } from './config';
-import { getUsersForNotification, getAllActiveUsers } from './db';
+import { getAllActiveNotificationUsers, getAllActiveUsers } from './db';
 import { fetchWeatherData } from './weatherService';
 import { formatMorningBriefing, generateAdvice } from './advisor';
 import { safeSendMessage, escapeHtml } from './telegramSafe';
 
 let schedulerInterval: NodeJS.Timeout | null = null;
-let lastNotifiedMinute = '';
+const lastNotifiedDayPerUser = new Map<number, string>(); // userId -> "YYYY-MM-DD"
 const alertedUsersStorm = new Map<number, number>(); // userId -> timestamp последнего алерта
+const lastStormCheckPerUser = new Map<number, number>(); // userId -> timestamp последней проверки погоды
+
+const STORM_CHECK_INTERVAL_MS = 30 * 60 * 1000; // Проверять погоду на предмет шторма не чаще 1 раза в 30 минут
+const STORM_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // Не повторять алерт пользователю чаще 1 раза в 4 часа
 
 function getLocalTimeHHMM(timeZone: string = DEFAULT_TIMEZONE): string {
   try {
@@ -23,12 +27,20 @@ function getLocalTimeHHMM(timeZone: string = DEFAULT_TIMEZONE): string {
   }
 }
 
+function getUserLocalDate(timeZone: string = DEFAULT_TIMEZONE): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || DEFAULT_TIMEZONE }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export function startNotificationScheduler(): void {
   if (schedulerInterval) {
     return;
   }
 
-  console.log(`⏰ [MeteoBot] Планировщик утренних брифингов запущен (часовой пояс: ${DEFAULT_TIMEZONE}).`);
+  console.log(`⏰ [MeteoBot] Планировщик утренних брифингов запущен (часовой пояс по умолчанию: ${DEFAULT_TIMEZONE}).`);
 
   // Проверяем каждые 30 секунд
   schedulerInterval = setInterval(async () => {
@@ -50,25 +62,33 @@ export function stopNotificationScheduler(): void {
 }
 
 async function checkMorningBriefings(): Promise<void> {
-  const currentTime = getLocalTimeHHMM(DEFAULT_TIMEZONE);
-
-  // Защита от повторной отправки в ту же самую минуту
-  if (currentTime === lastNotifiedMinute) {
-    return;
-  }
-
-  const users = getUsersForNotification(currentTime);
+  const users = getAllActiveNotificationUsers();
   if (!users.length) {
     return;
   }
-
-  lastNotifiedMinute = currentTime;
-  console.log(`📢 [MeteoBot] Отправка утренних брифингов для ${users.length} пользователей (время: ${currentTime})...`);
 
   for (const user of users) {
     if (!user.latitude || !user.longitude || !user.city_name) {
       continue;
     }
+
+    const tz = user.timezone || DEFAULT_TIMEZONE;
+    const userLocalTime = getLocalTimeHHMM(tz);
+
+    // Сверяем время (например '07:30')
+    if (userLocalTime !== user.notify_time) {
+      continue;
+    }
+
+    // Проверяем, не отправляли ли уже сегодня этому пользователю
+    const userLocalDate = getUserLocalDate(tz);
+    if (lastNotifiedDayPerUser.get(user.id) === userLocalDate) {
+      continue;
+    }
+
+    // Фиксируем дату отправки ДО асинхронного вызова для предотвращения гонок
+    lastNotifiedDayPerUser.set(user.id, userLocalDate);
+    console.log(`📢 [MeteoBot] Отправка утреннего брифинга для ${user.first_name} (ID: ${user.id}, время: ${userLocalTime})...`);
 
     try {
       const lang = user.language || 'ru';
@@ -76,7 +96,7 @@ async function checkMorningBriefings(): Promise<void> {
         user.city_name,
         user.latitude,
         user.longitude,
-        user.timezone,
+        tz,
         lang
       );
       const text = formatMorningBriefing(weather, user.first_name || 'друг', lang);
@@ -96,11 +116,20 @@ async function checkStormAlerts(): Promise<void> {
   for (const user of users) {
     if (!user.latitude || !user.longitude || !user.city_name) continue;
 
-    // Не спамить: алерт не чаще раза в 4 часа
-    const lastAlert = alertedUsersStorm.get(user.id) || 0;
-    if (now - lastAlert < 4 * 60 * 60 * 1000) {
+    // 1. Не запрашивать погоду чаще чем раз в 30 минут для пользователя
+    const lastCheck = lastStormCheckPerUser.get(user.id) || 0;
+    if (now - lastCheck < STORM_CHECK_INTERVAL_MS) {
       continue;
     }
+
+    // 2. Не отправлять повторный алерт чаще раза в 4 часа
+    const lastAlert = alertedUsersStorm.get(user.id) || 0;
+    if (now - lastAlert < STORM_ALERT_COOLDOWN_MS) {
+      continue;
+    }
+
+    // Фиксируем время проверки ДО сетевого запроса, чтобы не спамить API каждые 30 секунд при спокойной погоде
+    lastStormCheckPerUser.set(user.id, now);
 
     try {
       const lang = user.language || 'ru';

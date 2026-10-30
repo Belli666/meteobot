@@ -542,7 +542,7 @@ export function initCommands(): void {
         updateUserSettings(userId, { notify_time: cleanTime, notify_enabled: 1 });
         const updated = getValidUser(userId, query.from);
 
-        await safeSendMessage(chatId ? bot : bot, chatId, I18N_TEXTS.timeSetSuccess[lang](cleanTime));
+        await safeSendMessage(bot, chatId, I18N_TEXTS.timeSetSuccess[lang](cleanTime));
         return sendSettingsMenu(chatId, updated);
       }
 
